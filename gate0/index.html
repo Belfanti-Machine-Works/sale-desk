@@ -92,7 +92,8 @@
   <h2>5. AI price test (uses the photos from test 3)</h2>
   <div id="keyBox" style="display:none">
     <p class="mute">Paste your Claude API key (from console.anthropic.com). It's saved straight to your Google script, it isn't shown again, and Claude never sees it.</p>
-    <input type="password" id="apiKey" placeholder="sk-ant-..." autocomplete="off">
+    <p class="res" id="keyState"></p>
+    <input type="password" id="apiKey" placeholder="sk-ant-api..." autocomplete="off">
     <button id="saveKey">Save key</button>
   </div>
   <button id="aiBtn">Price my photos</button>
@@ -227,7 +228,10 @@ function api(action, params) {
 // ---------- 5. AI
 function refreshStatus() {
   api('status').then(function (s) {
-    document.getElementById('keyBox').style.display = s.hasKey ? 'none' : 'block';
+    document.getElementById('keyBox').style.display = 'block';
+    document.getElementById('keyState').textContent = s.hasKey
+      ? 'A key is saved. To replace it, paste the new one and tap Save key.'
+      : 'No key saved yet.';
     results.backend = 'reachable';
     renderSummary();
   }).catch(function (e) { results.backend = 'UNREACHABLE: ' + e.message; renderSummary(); });
