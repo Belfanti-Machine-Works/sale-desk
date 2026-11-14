@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Huge Resale Inventory Sale</title>
+<meta name="description" content="Huge resale inventory sale: designer brands, $1 racks, 1,000s of items. See dates, hours and featured items.">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#FFD60A">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Huge Resale Inventory Sale">
+<meta property="og:description" content="Designer brands · $1 racks · 1,000s of items. Tap for dates, hours and featured items.">
+<meta property="og:site_name" content="Huge Resale Inventory Sale">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Huge Resale Inventory Sale">
+<meta name="twitter:description" content="Designer brands · $1 racks · 1,000s of items.">
+<style>
+  :root { --ink:#111; --mute:#555; --line:#e2e2e2; --bg:#fff; --soft:#f5f5f2; --hi:#FFD60A; --accent:#1450d2; }
+  * { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:18px/1.45 system-ui, -apple-system, "Helvetica Neue", "Segoe UI", Arial, sans-serif; overflow-x:hidden; }
+  .hero { background:var(--hi); padding:28px 16px 22px; text-align:center; }
+  .eyebrow { font-weight:900; font-size:clamp(28px, 9vw, 52px); line-height:1; letter-spacing:-.01em; margin:0; }
+  .name { font-size:18px; font-weight:700; margin:10px 0 0; }
+  main { max-width:760px; margin:0 auto; padding:0 16px 40px; }
+  .card { border:1px solid var(--line); border-radius:14px; padding:16px; margin:16px 0; background:#fff; }
+  .when { font-size:24px; font-weight:900; line-height:1.2; }
+  .hours { font-size:20px; font-weight:700; }
+  .addr { margin-top:10px; font-weight:600; }
+  .addr.hidden { color:var(--mute); font-weight:500; }
+  .addr a { color:var(--accent); }
+  .md { margin:8px 0 0; padding:0; list-style:none; color:var(--mute); }
+  .md li::before { content:"↘ "; }
+  .btn { display:block; width:100%; min-height:60px; border:0; border-radius:12px; background:var(--ink); color:#fff; font:inherit; font-weight:800; font-size:19px; margin-top:14px; cursor:pointer; }
+  .pts { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin:14px 0 0; padding:0; list-style:none; }
+  .pts li { background:#fff; border:2px solid var(--ink); border-radius:999px; padding:4px 12px; font-weight:800; font-size:16px; }
+  h2 { font-size:22px; margin:26px 0 10px; }
+  .grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
+  @media (min-width:600px) { .grid { grid-template-columns:repeat(3, minmax(0, 1fr)); } }
+  .item { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#fff; }
+  .ph { position:relative; aspect-ratio:3/4; background:#2b2b2b; }
+  .ph img { width:100%; height:100%; object-fit:cover; display:block; }
+  .ph .tt { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:10px; color:#fff; font-weight:800; font-size:16px; }
+  .price { position:absolute; right:6px; top:6px; background:var(--hi); color:#000; font-weight:900; font-size:18px; border-radius:999px; padding:2px 10px; }
+  .meta { padding:8px 10px 10px; font-size:15px; line-height:1.3; }
+  .meta b { display:block; font-size:13px; text-transform:uppercase; letter-spacing:.03em; }
+  .meta .sz { color:var(--mute); }
+  .msg { text-align:center; color:var(--mute); padding:30px 8px; }
+  .over { background:var(--soft); text-align:center; font-weight:700; }
+  footer { text-align:center; color:var(--mute); font-size:15px; padding:10px 16px 30px; }
+  .sk { background:linear-gradient(90deg,#eee,#f7f7f7,#eee); background-size:200% 100%; animation:sk 1.2s linear infinite; border-radius:10px; }
+  @keyframes sk { to { background-position:-200% 0; } }
+</style>
+</head>
+<body>
+<header class="hero">
+  <h1 class="eyebrow">HUGE RESALE<br>INVENTORY SALE</h1>
+  <p class="name" id="evName" hidden></p>
+  <ul class="pts"><li>Designer brands</li><li>$1 racks</li><li>1,000s of items</li></ul>
+</header>
+<main id="main">
+  <div class="card"><div class="sk" style="height:28px;width:70%"></div><div class="sk" style="height:22px;width:45%;margin-top:10px"></div><div class="sk" style="height:60px;margin-top:16px"></div></div>
+</main>
+<footer>Everything priced and tagged. Come early for the best picks.</footer>
+
+<script>
+(function () {
+  'use strict';
+  // Filled in at publish time. Overridable with ?api=<url>.
+  var API_URL_CONST = 'https://script.google.com/macros/s/AKfycbz28KUsB_NiT_9f8mxTywq3pO-Gg01HXWbauLfR4fKBbMYjH8XBY6BhoWAdUEr-SSQT/exec';
+
+  var params = new URLSearchParams(location.search);
+  var MOCK = params.get('mock') === '1';
+  var main = document.getElementById('main');
+
+  function apiUrl() {
+    var q = params.get('api');
+    if (q) return q;
+    if (API_URL_CONST && API_URL_CONST.indexOf('REPLACE_') !== 0) return API_URL_CONST;
+    try { return localStorage.getItem('saleDeskApi') || ''; } catch (e) { return ''; }
+  }
+
+  function el(tag, attrs) {
+    var e = document.createElement(tag);
+    if (attrs) for (var k in attrs) {
+      if (k === 'text') e.textContent = attrs[k];
+      else if (k === 'class') e.className = attrs[k];
+      else if (attrs[k] != null) e.setAttribute(k, attrs[k]);
+    }
+    for (var i = 2; i < arguments.length; i++) {
+      var c = arguments[i];
+      if (c == null || c === false) continue;
+      if (Array.isArray(c)) c.forEach(function (x) { if (x) e.appendChild(x); });
+      else e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    }
+    return e;
+  }
+
+  // ---------- dates ----------
+  function toDate(v) { if (!v) return null; var d = new Date(v); return isNaN(d) ? null : d; }
+  function sameDay(a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+  function fmtTime(d) { var h = d.getHours(), m = d.getMinutes(), ap = h < 12 ? 'am' : 'pm'; h = h % 12 || 12; return m ? h + ':' + String(m).padStart(2, '0') + ap : h + ap; }
+  function dow(d) { return d.toLocaleDateString('en-US', { weekday: 'long' }); }
+  function mon(d) { return d.toLocaleDateString('en-US', { month: 'long' }); }
+  function when(ev) {
+    var s = toDate(ev.start), e = toDate(ev.end);
+    if (!s) return { days: 'Date coming soon', hours: '' };
+    if (!e || sameDay(s, e)) return { days: dow(s) + ', ' + mon(s) + ' ' + s.getDate(), hours: e ? fmtTime(s) + ' – ' + fmtTime(e) : 'From ' + fmtTime(s) };
+    var days = s.getMonth() === e.getMonth()
+      ? dow(s) + ' – ' + dow(e) + ', ' + mon(s) + ' ' + s.getDate() + '–' + e.getDate()
+      : dow(s) + ', ' + mon(s) + ' ' + s.getDate() + ' – ' + dow(e) + ', ' + mon(e) + ' ' + e.getDate();
+    return { days: days, hours: fmtTime(s) + ' – ' + fmtTime(e) + ' each day' };
+  }
+  function parseJson(v, fb) { if (v == null || v === '') return fb; if (typeof v !== 'string') return v; try { return JSON.parse(v); } catch (e) { return fb; } }
+  function mdLine(m) {
+    var d = toDate(m.from);
+    var w = d ? d.toLocaleDateString('en-US', { weekday: 'short' }) + ' ' + fmtTime(d) : 'Later';
+    return w + ': ' + Math.round(Number(m.pct) || 0) + '% off ' + (m.applies === 'all' ? 'everything' : 'labeled items');
+  }
+  function money(n) { n = Number(n); if (!isFinite(n) || n <= 0) return ''; return Number.isInteger(n) ? '$' + n : '$' + n.toFixed(2); }
+
+  // ---------- .ics ----------
+  function icsDate(d) { return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, ''); }
+  function icsEsc(s) { return String(s || '').replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;'); }
+  function fold(line) { var out = []; while (line.length > 74) { out.push(line.slice(0, 74)); line = ' ' + line.slice(74); } out.push(line); return out.join('\r\n'); }
+  function buildIcs(ev) {
+    var s = toDate(ev.start), e = toDate(ev.end) || new Date(s.getTime() + 6 * 3600000);
+    var dayEnd = e;
+    var count = 1;
+    if (!sameDay(s, e)) { // daily hours: first day open→close, repeat each day
+      dayEnd = new Date(s); dayEnd.setHours(e.getHours(), e.getMinutes(), 0, 0);
+      if (dayEnd <= s) dayEnd = new Date(s.getTime() + 6 * 3600000);
+      var a = new Date(s.getFullYear(), s.getMonth(), s.getDate()), b = new Date(e.getFullYear(), e.getMonth(), e.getDate());
+      count = Math.max(1, Math.min(14, Math.round((b - a) / 86400000) + 1));
+    }
+    var url = location.href.split('#')[0];
+    var desc = 'Huge resale inventory sale. Designer brands, $1 racks, 1,000s of items.\n' +
+      (ev.address ? '' : 'Address posted 2 days before the sale: ') + url;
+    var lines = [
+      'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Sale Desk//Preview//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+      'BEGIN:VEVENT',
+      'UID:' + (ev.event_id || 'sale') + '-' + icsDate(s) + '@sale-desk',
+      'DTSTAMP:' + icsDate(new Date()),
+      'DTSTART:' + icsDate(s),
+      'DTEND:' + icsDate(dayEnd),
+    ];
+    if (count > 1) lines.push('RRULE:FREQ=DAILY;COUNT=' + count);
+    lines.push('SUMMARY:' + icsEsc(ev.name || 'Huge Resale Inventory Sale'));
+    if (ev.address) lines.push('LOCATION:' + icsEsc(ev.address));
+    lines.push('DESCRIPTION:' + icsEsc(desc), 'URL:' + url, 'END:VEVENT', 'END:VCALENDAR');
+    return lines.map(fold).join('\r\n') + '\r\n';
+  }
+  function downloadIcs(ev) {
+    var blob = new Blob([buildIcs(ev)], { type: 'text/calendar;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = el('a', { href: url, download: 'sale.ics' });
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { a.remove(); URL.revokeObjectURL(url); }, 4000);
+  }
+
+  // ---------- render ----------
+  function tile(it) {
+    var label = [it.brand, it.title].filter(Boolean).join(' ');
+    var ph = el('div', { class: 'ph' });
+    var fallback = function () { return el('div', { class: 'tt', text: label || 'Great find' }); };
+    if (it.thumb_url) {
+      var img = el('img', { src: it.thumb_url, alt: label || 'Item photo', loading: 'lazy', decoding: 'async', referrerpolicy: 'no-referrer' });
+      img.addEventListener('error', function () { img.replaceWith(fallback()); }, { once: true });
+      ph.appendChild(img);
+    } else ph.appendChild(fallback());
+    var p = money(it.final_price || it.price || it.ai_price);
+    if (p) ph.appendChild(el('span', { class: 'price', text: p }));
+    return el('div', { class: 'item' }, ph,
+      el('div', { class: 'meta' },
+        it.brand ? el('b', { text: it.brand }) : null,
+        el('span', { text: it.title || it.category || '' }),
+        it.size ? el('div', { class: 'sz', text: 'Size ' + it.size }) : null));
+  }
+
+  function render(data) {
+    var ev = data.event || data;
+    var items = (data.items || data.featured || []).filter(function (i) { return i && i.promo_safe !== false; });
+    var w = when(ev);
+    var end = toDate(ev.end) || toDate(ev.start);
+    var over = end && end.getTime() < Date.now();
+    var md = parseJson(ev.markdowns, []);
+
+    if (ev.name && ev.name.trim().toLowerCase() !== 'huge resale inventory sale') {
+      var n = document.getElementById('evName'); n.textContent = ev.name; n.hidden = false;
+    }
+    document.title = (ev.name || 'Huge Resale Inventory Sale') + (toDate(ev.start) ? ' · ' + w.days : '');
+
+    var addr;
+    if (ev.address) {
+      addr = el('div', { class: 'addr' }, '📍 ',
+        el('a', { href: 'https://maps.apple.com/?q=' + encodeURIComponent(ev.address), target: '_blank', rel: 'noopener', text: ev.address }));
+    } else {
+      addr = el('div', { class: 'addr hidden', id: 'addrHidden', text: 'Address posted 2 days before the sale' });
+    }
+
+    var info = el('div', { class: 'card' },
+      el('div', { class: 'when', text: w.days }),
+      w.hours ? el('div', { class: 'hours', text: w.hours }) : null,
+      addr,
+      Array.isArray(md) && md.length ? el('ul', { class: 'md' }, md.map(function (m) { return el('li', { text: mdLine(m) }); })) : null);
+    if (toDate(ev.start) && !over) {
+      var b = el('button', { class: 'btn', type: 'button', text: 'Add to calendar' });
+      b.addEventListener('click', function () { downloadIcs(ev); });
+      info.appendChild(b);
+    }
+
+    main.replaceChildren.apply(main, [
+      over ? el('div', { class: 'card over', text: 'This sale has ended. Thanks for coming!' }) : null,
+      info,
+      el('h2', { text: items.length ? 'A few of the featured items' : 'Featured items' }),
+      items.length ? el('div', { class: 'grid' }, items.map(tile)) : el('p', { class: 'msg', text: 'Photos coming soon.' }),
+      el('p', { class: 'msg', text: '…and 1,000s more on the racks. Clothing, costumes, shoes and accessories.' })
+    ].filter(Boolean));
+  }
+
+  function fail() {
+    main.replaceChildren(el('div', { class: 'card msg' }, el('b', { text: 'Sale details coming soon.' }), el('div', { text: 'Check back in a little while.' })));
+  }
+
+  // ---------- sample data (?mock=1; add &addr=1 to simulate the last 48 hours) ----------
+  function sampleThumb(text, hue) {
+    var svg = "<svg xmlns='http://www.w3.org/2000/svg' width='300' height='400'><rect width='300' height='400' fill='hsl(" + hue + ",45%,62%)'/>" +
+      "<rect x='70' y='90' width='160' height='220' rx='24' fill='hsl(" + hue + ",45%,42%)'/>" +
+      "<text x='150' y='370' font-size='26' text-anchor='middle' font-family='Arial,sans-serif' fill='#111'>" + text + '</text></svg>';
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  }
+  function sample() {
+    var sat = new Date(); sat.setHours(0, 0, 0, 0); sat.setDate(sat.getDate() + ((6 - sat.getDay() + 7) % 7 || 7));
+    var sun = new Date(sat.getTime() + 86400000);
+    var at = function (d, h) { var x = new Date(d); x.setHours(h, 0, 0, 0); return x.toISOString(); };
+    var list = [
+      ['Canada Goose', 'Down parka', 'L', 160], ['Coach', 'Leather belt bag', '', 60], ['Free People', 'Embroidered dress', 'M', 35],
+      ['J.Crew', 'Wool peacoat', 'M', 25], ['Madewell', 'Corduroy pants', '28', 20], ['Leg Avenue', 'Cowgirl costume', 'S', 15],
+      ['Frye', 'Leather boots', '8', 45], ['Lululemon', 'Align leggings', '6', 20], ['Kate Spade', 'Crossbody bag', '', 30],
+      ['Levi\u2019s', 'Trucker jacket', 'L', 20], ['Patagonia', 'Fleece pullover', 'M', 25], ['Vintage', 'Sequin gown', 'S', 40],
+    ];
+    var ev = { event_id: 'E-001', name: 'Huge Resale Inventory Sale', start: at(sat, 8), end: at(sun, 14),
+      markdowns: [{ from: at(sun, 12), pct: 50, applies: 'labeled' }] };
+    if (params.get('addr') === '1') ev.address = '123 Example St, Springfield';
+    return { event: ev, items: list.map(function (r, i) {
+      return { id: 'S-' + String(i + 1).padStart(5, '0'), brand: r[0], title: r[1], size: r[2], final_price: r[3], promo_safe: true, thumb_url: sampleThumb(r[0], (i * 37) % 360) };
+    }) };
+  }
+
+  if (MOCK) { setTimeout(function () { render(sample()); }, 250); return; }
+  var api = apiUrl();
+  if (!api) { fail(); return; }
+  var sep = api.indexOf('?') >= 0 ? '&' : '?';
+  fetch(api + sep + 'page=preview', { credentials: 'omit', redirect: 'follow' })
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (j && j.ok === false) throw new Error('not ok');
+      var d = j && j.ok ? j.data : j;
+      if (!d) throw new Error('empty');
+      render(d);
+    })
+    .catch(fail);
+})();
+</script>
+</body>
+</html>

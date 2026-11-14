@@ -1,0 +1,14 @@
+{
+  "name": "Sale Desk",
+  "short_name": "Sale Desk",
+  "description": "Price, label, and sell the inventory at our sales.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
