@@ -285,9 +285,10 @@ function renderPrice(container) {
     view.appendChild(h('p', { class: 'mute pr-sub' }, flow.retake ? 'Get close and make sure the words are sharp.' : p.sub));
     view.appendChild(h('label', { class: 'btn btn-primary btn-huge pr-shoot', for: 'pr-file', role: 'button' }, '📷  Take photo'));
     if (r === 'tag' && !flow.retake) view.appendChild(BigButton('Skip: no tag', () => { flow.step++; drawShoot(); }, { variant: 'secondary', class: 'btn-huge' }));
-    // CONTRACT §8: "Done" only once the item photo exists, or at the item step with >= 2 photos.
-    if (r === 'item' && count() >= 2) view.appendChild(BigButton('Done: price it now', () => submit(), { variant: 'secondary' }));
+    // The whole-item photo matters most (thumbnail, promo, condition), so it is the only big button at that
+    // step; skipping it is a small link. (Real use: 2 of 2 first items were priced without one.)
     const links = h('div', { class: 'pr-links-row' });
+    if (r === 'item' && count() >= 1) links.appendChild(h('button', { type: 'button', class: 'linkbtn', onClick: () => submit() }, 'No item photo? Price it anyway'));
     if (r === 'label' && !flow.retake) links.appendChild(h('button', { type: 'button', class: 'linkbtn', onClick: () => { flow.step = 1; drawShoot(); } }, 'No label? Skip it'));
     if (count() || flow.retake) links.appendChild(h('button', { type: 'button', class: 'linkbtn', onClick: reset }, 'Start over'));
     if (MOCK) links.appendChild(h('button', { type: 'button', class: 'linkbtn pr-sample', onClick: () => samplePhoto(r).then(takePhoto) }, 'Use sample photo'));
