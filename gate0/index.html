@@ -93,7 +93,7 @@
   <div id="keyBox" style="display:none">
     <p class="mute">Paste your Claude API key (from console.anthropic.com). It's saved straight to your Google script, it isn't shown again, and Claude never sees it.</p>
     <p class="res" id="keyState"></p>
-    <input type="password" id="apiKey" placeholder="sk-ant-api..." autocomplete="off">
+    <input type="password" id="apiKey" placeholder="sk-ant-..." autocomplete="off">
     <button id="saveKey">Save key</button>
   </div>
   <button id="aiBtn">Price my photos</button>
@@ -240,7 +240,7 @@ refreshStatus();
 document.getElementById('saveKey').onclick = function () {
   var k = document.getElementById('apiKey').value;
   api('saveKey', { key: k }).then(function () {
-    document.getElementById('apiKey').value = ''; refreshStatus(); alert('Key saved.');
+    document.getElementById('apiKey').value = ''; refreshStatus(); alert('Key checked with Claude and saved.');
   }).catch(function (e) { alert(e.message); });
 };
 document.getElementById('aiBtn').onclick = function () {
