@@ -25,11 +25,17 @@ function priceOf(it) {
   return f !== '' && f != null ? Number(f) : Number(it.ai_price) || 0;
 }
 function descOf(it) { return [it.brand, it.title].filter(Boolean).join(' · ') || it.id; }
+let tierCache = null; // [{tier, label, price}] from tiers.list, for "$3 bin" labels
+async function loadTiers() {
+  if (tierCache) return;
+  try { tierCache = (await call('tiers.list')).tiers || []; } catch (e) { /* fall back to parsing T3 -> $3 */ }
+}
 
 // ================================================================ Inventory
 function renderInventory(container, ctx) {
   container.classList.add('tab-inventory');
-  const state = { q: '', status: '', offset: 0, items: [], total: 0, loading: false, seq: 0 };
+  loadTiers();
+  const state ={ q: '', status: '', offset: 0, items: [], total: 0, loading: false, seq: 0 };
   const statsEl = h('div', { class: 'inv-stats' });
   const search = h('input', { type: 'search', placeholder: 'Search brand, item, or S-00012', 'aria-label': 'Search inventory', autocomplete: 'off', autocorrect: 'off', enterkeyhint: 'search' });
   const chips = h('div', { class: 'chips', role: 'tablist' });
@@ -48,11 +54,12 @@ function renderInventory(container, ctx) {
     try {
       const s = await call('inventory.stats');
       const c = s.counts || {};
-      const forSale = (c.priced || 0) + (c.labeled || 0);
+      const forSale = (c.priced || 0) + (c.labeled || 0) + (c.binned || 0);
       statsEl.innerHTML = '';
       statsEl.append(
-        stat(forSale, 'for sale'), stat(money(s.value_remaining || 0), 'value left'),
+        stat(forSale, 'for sale'), stat(money(s.value_remaining || 0), 'tagged value'),
         stat((c.review || 0) + (c.researching || 0), 'to review'), stat(c.sold || 0, 'sold'));
+      if (c.binned) statsEl.appendChild(h('p', { class: 'inv-note' }, c.binned + ' item' + (c.binned === 1 ? ' is' : 's are') + ' in price bins (no label needed).'));
       if (c.priced) statsEl.appendChild(h('p', { class: 'inv-note' }, c.priced + ' priced item' + (c.priced === 1 ? '' : 's') + ' still need a label.'));
     } catch (e) { /* stats are a nice-to-have */ }
   }
@@ -98,7 +105,15 @@ function renderInventory(container, ctx) {
       h('div', { class: 'main' },
         h('div', { class: 't1' }, descOf(it)),
         h('div', { class: 't2' }, pill(it.status), ' ', it.size ? 'Size ' + it.size + ' · ' : '', it.id)),
-      h('div', { class: 'price' }, it.status === 'binned' ? (it.tier || 'Bin') : money(priceOf(it))));
+      h('div', { class: 'price' }, it.status === 'binned' ? binLabel(it.tier) : money(priceOf(it))));
+  }
+  // 'T3' -> '$3 bin', 'BAG' -> 'Bag sale' (uses the real tier list once loaded).
+  function binLabel(tier) {
+    const t = tierCache && tierCache.find((x) => x.tier === tier);
+    if (t && t.price) return money(t.price) + ' bin';
+    const m = /^T(\d+)$/.exec(String(tier || ''));
+    if (m) return '$' + m[1] + ' bin';
+    return tier === 'BAG' ? 'Bag sale' : 'Bin';
   }
   function replaceItem(updated, removed) {
     const i = state.items.findIndex((x) => x.id === (updated ? updated.id : removed));
@@ -117,10 +132,10 @@ function renderInventory(container, ctx) {
     function paint(item) {
       body.innerHTML = '';
       const retail = Number(item.retail_est) || 0;
-      body.append(
+      body.append(...[ // native append() would print null as the text "null", so drop empties
         item.thumb_url ? h('img', { class: 'inv-photo', src: item.thumb_url, alt: '' }) : null,
         h('div', { class: 'inv-head' },
-          h('div', { class: 'price-big' }, item.status === 'binned' ? (item.tier || 'Bin') : money(priceOf(item))),
+          h('div', { class: 'price-big' }, item.status === 'binned' ? binLabel(item.tier) : money(priceOf(item))),
           pill(item.status)),
         item.retail_confident && retail > 0 ? h('p', { class: 'inv-was' }, 'Was ' + money(retail) + ' new') : null,
         h('h2', null, descOf(item)),
@@ -133,7 +148,7 @@ function renderInventory(container, ctx) {
           fact('Priced by', item.priced_by || item.created_by),
           item.status === 'sold' ? fact('Sold', money(item.sold_price) + (item.sold_at ? ' on ' + new Date(item.sold_at).toLocaleDateString() : '')) : null,
           item.premium ? fact('Table', '★ Premium') : null,
-          item.notes ? fact('Notes', item.notes) : null));
+          item.notes ? fact('Notes', item.notes) : null)].filter(Boolean));
       body.appendChild(actions(item));
     }
     function fact(k, v) { return v || v === 0 ? [h('dt', null, k), h('dd', null, String(v))] : null; }

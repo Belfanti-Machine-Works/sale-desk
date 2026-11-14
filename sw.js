@@ -2,7 +2,7 @@
 // (those are cross-origin POSTs to Apps Script and are passed straight through).
 // index.html is network-first so updates land; other shell files are
 // stale-while-revalidate. Bump VERSION on each publish to drop old caches.
-const VERSION = 'sale-desk-20261114-140110';
+const VERSION = 'sale-desk-20261114-145108';
 const SHELL = [
   './', 'index.html', 'app.css', 'manifest.json', 'icon.svg',
   'js/main.js', 'js/api.js', 'js/state.js', 'js/ui.js', 'js/price.js', 'js/inventory.js',
