@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Sale Desk – Gate 0</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<style>
+  :root { --ink:#111; --bg:#fff; --mute:#666; --ok:#0a7d2c; --bad:#b00020; --line:#ddd; --accent:#1450d2; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:18px/1.4 -apple-system, system-ui, sans-serif; color:var(--ink); background:var(--bg); padding:16px; }
+  h1 { font-size:24px; margin:0 0 4px; }
+  h2 { font-size:20px; margin:0 0 8px; }
+  .card { border:1px solid var(--line); border-radius:14px; padding:16px; margin:16px 0; }
+  button, .btn { display:block; width:100%; min-height:64px; font-size:20px; font-weight:600; border:0; border-radius:12px;
+    background:var(--accent); color:#fff; margin:8px 0; cursor:pointer; text-align:center; line-height:64px; }
+  button.secondary { background:#eee; color:var(--ink); }
+  .row { display:flex; gap:8px; } .row > * { flex:1; }
+  .mute { color:var(--mute); font-size:16px; }
+  .res { font-weight:700; } .pass { color:var(--ok); } .fail { color:var(--bad); }
+  #reader { width:100%; }
+  .thumbs { display:flex; gap:8px; } .thumbs img { width:30%; border-radius:8px; border:1px solid var(--line); }
+  pre { white-space:pre-wrap; word-break:break-word; background:#f6f6f6; padding:12px; border-radius:8px; font-size:14px; }
+  input[type=password], input[type=text] { width:100%; font-size:18px; padding:14px; border:1px solid #bbb; border-radius:10px; }
+  input[type=file] { display:none; }
+  /* label preview */
+  .label { width:62mm; height:100mm; border:1px dashed #999; padding:3mm; display:flex; flex-direction:column; margin:8px auto; background:#fff; color:#000; }
+  .label .price { font-size:22mm; font-weight:800; line-height:1; }
+  .label .was { font-size:4mm; margin-top:1mm; }
+  .label .desc { font-size:4.2mm; margin-top:2mm; flex:1; }
+  .label .bottom { display:flex; justify-content:space-between; align-items:flex-end; }
+  .label .qr img { width:22mm; height:22mm; image-rendering:pixelated; }
+  .label .lid { font-size:4mm; font-weight:700; }
+  @page { size: 62mm 100mm; margin: 0; }
+  @media print {
+    body { padding:0; }
+    body > *:not(#printArea) { display:none !important; }
+    #printArea { display:block !important; }
+    #printArea .label { border:0; margin:0; }
+  }
+  #printArea { display:none; }
+</style>
+</head>
+<body>
+<h1>Sale Desk · Gate 0 test</h1>
+<p class="mute">Run tests 1–5 top to bottom, then tap <b>Copy results</b> at the bottom and paste them to Claude. About 10 minutes.</p>
+
+<div class="card">
+  <h2>1. Live QR scan</h2>
+  <p class="mute">Tap Start, allow the camera, and point it at any QR code (a product box, a menu, or the label in test 4 on another screen).</p>
+  <div id="reader"></div>
+  <button id="scanStart">Start live scan</button>
+  <div>Result: <span id="r1" class="res">not run</span></div>
+</div>
+
+<div class="card">
+  <h2>2. Photo QR scan (backup method)</h2>
+  <p class="mute">Takes one photo of a QR code and reads it.</p>
+  <label class="btn" for="qrPhoto">Take QR photo</label>
+  <input type="file" id="qrPhoto" accept="image/*" capture="environment">
+  <div>Result: <span id="r2" class="res">not run</span></div>
+</div>
+
+<div class="card">
+  <h2>3. Item photos (label → tag → item)</h2>
+  <p id="photoPrompt" class="res">Shoot the BRAND / SIZE label</p>
+  <label class="btn" for="itemPhoto" id="shootBtn">Take photo</label>
+  <input type="file" id="itemPhoto" accept="image/*" capture="environment">
+  <div class="row">
+    <button class="secondary" id="skipTag" style="display:none">Skip: no tag</button>
+    <button class="secondary" id="photosDone" style="display:none">Done</button>
+  </div>
+  <div class="thumbs" id="thumbs"></div>
+  <div>Result: <span id="r3" class="res">not run</span></div>
+</div>
+
+<div class="card">
+  <h2>4. Label print</h2>
+  <div class="label" id="labelPreview"></div>
+  <button id="printBtn">Print label</button>
+  <p class="mute">No label printer yet? Still tap Print. We only need to see that the iPhone print screen opens and the preview is a narrow label shape. Then pick one:</p>
+  <div class="row">
+    <button class="secondary" data-r4="PASS: print screen opened, label-shaped preview">Opened, looks right</button>
+    <button class="secondary" data-r4="FAIL: print screen did not open or wrong shape">Didn't work</button>
+  </div>
+  <div>Result: <span id="r4" class="res">not run</span></div>
+</div>
+
+<div class="card">
+  <h2>5. AI price test (uses the photos from test 3)</h2>
+  <div id="keyBox" style="display:none">
+    <p class="mute">Paste your Claude API key (from console.anthropic.com). It's saved straight to your Google script, it isn't shown again, and Claude never sees it.</p>
+    <input type="password" id="apiKey" placeholder="sk-ant-..." autocomplete="off">
+    <button id="saveKey">Save key</button>
+  </div>
+  <button id="aiBtn">Price my photos</button>
+  <p class="mute" id="aiWait" style="display:none">Working… the sold-price search can take 20–60 seconds.</p>
+  <div>Result: <span id="r5" class="res">not run</span></div>
+  <pre id="aiOut" style="display:none"></pre>
+</div>
+
+<div class="card">
+  <h2>Results</h2>
+  <pre id="summary"></pre>
+  <button id="copyBtn">Copy results</button>
+</div>
+
+<div id="printArea"></div>
+
+<script>
+var results = { device: navigator.userAgent, r1:'not run', r2:'not run', r3:'not run', r4:'not run', r5:'not run', ai:null };
+function set(id, text, ok) {
+  results[id] = text;
+  var el = document.getElementById(id);
+  el.textContent = text; el.className = 'res ' + (ok === true ? 'pass' : ok === false ? 'fail' : '');
+  renderSummary();
+}
+function renderSummary() { document.getElementById('summary').textContent = JSON.stringify(results, null, 2); }
+renderSummary();
+
+// ---------- 1. live scan
+var scanner = null;
+document.getElementById('scanStart').onclick = function () {
+  try {
+    scanner = new Html5Qrcode('reader');
+    var t0 = Date.now();
+    scanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: 220 }, function (text) {
+      set('r1', 'PASS: read "' + text.slice(0, 40) + '" in ' + ((Date.now() - t0) / 1000).toFixed(1) + 's', true);
+      scanner.stop().catch(function(){});
+    }, function () {}).catch(function (err) {
+      set('r1', 'FAIL: camera blocked (' + (err && (err.name || err.message || err)) + ')', false);
+    });
+  } catch (e) { set('r1', 'FAIL: ' + e.message, false); }
+};
+
+// ---------- image helpers
+function loadImage(file) {
+  return new Promise(function (resolve, reject) {
+    var img = new Image();
+    img.onload = function () { resolve(img); };
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+}
+function resize(img, max) {
+  var s = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+  var c = document.createElement('canvas');
+  c.width = Math.round(img.naturalWidth * s); c.height = Math.round(img.naturalHeight * s);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  return c;
+}
+
+// ---------- 2. photo QR
+document.getElementById('qrPhoto').onchange = function (e) {
+  var f = e.target.files[0]; if (!f) return;
+  loadImage(f).then(function (img) {
+    var c = resize(img, 1600);
+    var d = c.getContext('2d').getImageData(0, 0, c.width, c.height);
+    var code = jsQR(d.data, d.width, d.height);
+    if (code) set('r2', 'PASS: read "' + code.data.slice(0, 40) + '"', true);
+    else set('r2', 'FAIL: no QR found in photo', false);
+  }).catch(function (err) { set('r2', 'FAIL: ' + err, false); });
+};
+
+// ---------- 3. item photos
+var order = ['label', 'tag', 'item'];
+var prompts = { label: 'Shoot the BRAND / SIZE label', tag: 'Shoot the PRICE / HANG TAG', item: 'Shoot the WHOLE ITEM' };
+var step = 0, photos = {}, kb = 0, t3 = null;
+function showStep() {
+  var role = order[step];
+  document.getElementById('photoPrompt').textContent = role ? prompts[role] : 'All 3 photos taken';
+  document.getElementById('shootBtn').style.display = role ? 'block' : 'none';
+  document.getElementById('skipTag').style.display = role === 'tag' ? 'block' : 'none';
+  document.getElementById('photosDone').style.display = step > 0 && role ? 'block' : 'none';
+  if (!role) finishPhotos();
+}
+function finishPhotos() {
+  var n = Object.keys(photos).length;
+  set('r3', (n ? 'PASS' : 'FAIL') + ': ' + n + ' photo(s) [' + Object.keys(photos).join(', ') + '], total upload ' + kb + ' KB, ' +
+      ((Date.now() - t3) / 1000).toFixed(0) + 's start to finish', n > 0);
+}
+document.getElementById('itemPhoto').onchange = function (e) {
+  var f = e.target.files[0]; if (!f) return;
+  if (t3 === null) t3 = Date.now();
+  var role = order[step];
+  loadImage(f).then(function (img) {
+    var c = resize(img, 1280);
+    var url = c.toDataURL('image/jpeg', 0.8);
+    photos[role] = url.split(',')[1];
+    kb += Math.round(photos[role].length * 0.75 / 1024);
+    var im = document.createElement('img'); im.src = url; document.getElementById('thumbs').appendChild(im);
+    e.target.value = '';
+    step++; showStep();
+  });
+};
+document.getElementById('skipTag').onclick = function () { step++; showStep(); };
+document.getElementById('photosDone').onclick = function () { step = order.length; showStep(); };
+showStep();
+
+// ---------- 4. label
+function labelHtml() {
+  var qr = qrcode(0, 'M'); qr.addData('S-00001'); qr.make();
+  return '<div class="price">$12</div><div class="was">Was $89 new</div>' +
+    '<div class="desc">Free People · Embroidered peasant top · M</div>' +
+    '<div class="bottom"><div class="qr">' + qr.createImgTag(4, 0) + '</div><div class="lid">S-00001</div></div>';
+}
+document.getElementById('labelPreview').innerHTML = labelHtml();
+document.getElementById('printBtn').onclick = function () {
+  document.getElementById('printArea').innerHTML = '<div class="label">' + labelHtml() + '</div>';
+  try { window.print(); } catch (e) { set('r4', 'FAIL: print blocked (' + e.message + ')', false); }
+};
+Array.prototype.forEach.call(document.querySelectorAll('[data-r4]'), function (b) {
+  b.onclick = function () { var t = b.getAttribute('data-r4'); set('r4', t, t.indexOf('PASS') === 0); };
+});
+
+// ---------- backend (Google Apps Script JSON API; no Google login involved)
+var API_URL = 'https://script.google.com/macros/s/AKfycbz28KUsB_NiT_9f8mxTywq3pO-Gg01HXWbauLfR4fKBbMYjH8XBY6BhoWAdUEr-SSQT/exec';
+function api(action, params) {
+  var body = Object.assign({ action: action }, params || {});
+  return fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body), credentials: 'omit' })
+    .then(function (r) { return r.json(); })
+    .then(function (j) { if (!j.ok) throw new Error(j.error.message); return j.data; });
+}
+
+// ---------- 5. AI
+function refreshStatus() {
+  api('status').then(function (s) {
+    document.getElementById('keyBox').style.display = s.hasKey ? 'none' : 'block';
+    results.backend = 'reachable';
+    renderSummary();
+  }).catch(function (e) { results.backend = 'UNREACHABLE: ' + e.message; renderSummary(); });
+}
+refreshStatus();
+document.getElementById('saveKey').onclick = function () {
+  var k = document.getElementById('apiKey').value;
+  api('saveKey', { key: k }).then(function () {
+    document.getElementById('apiKey').value = ''; refreshStatus(); alert('Key saved.');
+  }).catch(function (e) { alert(e.message); });
+};
+document.getElementById('aiBtn').onclick = function () {
+  if (!Object.keys(photos).length) { alert('Do test 3 first.'); return; }
+  document.getElementById('aiWait').style.display = 'block';
+  var t0 = Date.now();
+  api('testClaude', { photos: photos }).then(function (out) {
+    document.getElementById('aiWait').style.display = 'none';
+    var pre = document.getElementById('aiOut'); pre.style.display = 'block';
+    pre.textContent = JSON.stringify(out, null, 2);
+    results.ai = out;
+    var ok = out.stage1 && out.stage1.result && out.stage2 && out.stage2.result;
+    set('r5', (ok ? 'PASS' : 'FAIL') + ': total ' + ((Date.now() - t0) / 1000).toFixed(0) + 's, cost $' + (out.total_cost || 0).toFixed(3), !!ok);
+  }).catch(function (e) {
+    document.getElementById('aiWait').style.display = 'none';
+    set('r5', 'FAIL: ' + e.message, false);
+  });
+};
+
+// ---------- copy
+document.getElementById('copyBtn').onclick = function () {
+  var txt = document.getElementById('summary').textContent;
+  if (navigator.clipboard) navigator.clipboard.writeText(txt).then(function () { alert('Copied. Paste it to Claude.'); },
+    function () { prompt('Copy this:', txt); });
+  else prompt('Copy this:', txt);
+};
+</script>
+</body>
+</html>
