@@ -94,9 +94,13 @@ export function errorMessage(err) {
     // A few codes carry a friendly server message worth showing (e.g. "Wrong PIN").
     if (err.code === 'AUTH' && err.message && /pin/i.test(err.message)) return 'Wrong PIN. Try again.';
     if (err.code === 'LOCKED' && err.by) return err.by + ' has this one open. Try another.';
+    // Show the server's detail for unexpected errors so problems can be diagnosed from a screenshot.
+    if (err.code === 'INTERNAL' && err.message) return err.message;
     return MESSAGES[err.code];
   }
-  return MESSAGES.INTERNAL;
+  // A code-less error is a bug in the app itself: include the detail.
+  const detail = err && (err.message || String(err));
+  return detail ? 'Something went wrong in the app. (' + String(detail).slice(0, 160) + ')' : MESSAGES.INTERNAL;
 }
 // Convenience (not in §9, but handy): toast an error in plain English.
 export function showError(err) {
