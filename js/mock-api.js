@@ -20,7 +20,7 @@ const ROLES = { helper: 1, pricer: 2, admin: 3 };
 const HELPER = ['scan', 'checkout', 'sales.list', 'dashboard', 'tiers.list', 'events.list', 'settings.get'];
 const PRICER_EXTRA = ['voidSale', 'item.', 'review.', 'inventory.', 'tiers.count', 'promo.', 'events.save'];
 const PUBLIC_SETTINGS = ['venmo_handle', 'zelle_handle', 'venmo_qr_url', 'label_mode', 'users'];
-const ADMIN_ONLY = ['settings.save', 'setup.', 'item.delete', 'reports.'];
+const ADMIN_ONLY = ['settings.save', 'setup.', 'reports.'];
 const OPEN_STATUSES = ['new', 'researching', 'review', 'priced', 'labeled'];
 
 // ------------------------------------------------------------ helpers

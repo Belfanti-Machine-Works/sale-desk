@@ -19,7 +19,7 @@ export let session = load();
 const HELPER = ['scan', 'checkout', 'sales.list', 'dashboard', 'tiers.list', 'events.list', 'settings.get', 'fun.egg'];
 // events.save is not in the §3 table; the promo agent edits events, so it sits with promo.* at pricer+.
 const PRICER = ['voidSale', 'item.*', 'review.*', 'inventory.*', 'tiers.count', 'promo.*', 'events.save'];
-const ADMIN = ['settings.*', 'setup.*', 'item.delete', 'reports.*'];
+const ADMIN = ['settings.*', 'setup.*', 'reports.*']; // item.delete is pricer+ (covered by item.*)
 const PUBLIC = ['login', 'setup.init'];
 export const ROLE_ACTIONS = {
   helper: HELPER,
@@ -35,7 +35,6 @@ export function can(action, role) {
   if (PUBLIC.includes(action)) return true;
   const r = role || (session && session.role);
   if (!r) return false;
-  if (r === 'pricer' && action === 'item.delete') return false;
   return (ROLE_ACTIONS[r] || []).some((p) => match(p, action));
 }
 // hasRole('pricer') -> true for pricer or admin.

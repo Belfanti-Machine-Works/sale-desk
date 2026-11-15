@@ -242,7 +242,7 @@ function renderInventory(container, ctx) {
         box.appendChild(h('div', { class: 'center' }, h('button', { type: 'button', class: 'linkbtn', style: { color: 'var(--bad)' }, onClick: async () => {
           if (!(await confirmModal('Delete ' + item.id + ' forever? This cannot be undone.', 'Delete forever'))) return;
           try { await call('item.delete', { id: item.id }); toast('Deleted ' + item.id, 'ok'); sh.close(); replaceItem(null, item.id); } catch (e) { showError(e); }
-        } }, 'Delete forever (admin)')));
+        } }, 'Delete forever')));
       }
       return box;
     }
