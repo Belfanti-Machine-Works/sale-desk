@@ -2,6 +2,7 @@
 import { call, MOCK } from './api.js';
 import { session, can, on, emit } from './state.js';
 import { h, BigButton, toast, keypad, Countdown, confirmModal, money, showError, spinner, empty, imageToJpeg } from './ui.js';
+import { openEditItem, brandDisplay } from './edit-item.js';
 
 const ROLES = ['label', 'tag', 'item'];
 const PROMPTS = {
@@ -165,14 +166,28 @@ function showResult(host, item, opts) {
     }
   }
 
-  const desc = [item.brand, item.title, item.size].filter(Boolean).join(' · ');
+  const descText = () => [brandDisplay(item), item.title, item.size].filter(Boolean).join(' · ') || 'Item';
+  const desc = descText();
+  // "Wrong brand? Edit": fix brand / collab / style code. A re-check sends it back to researching (leaves this
+  // screen); otherwise the card updates in place and the pricer accepts as usual.
+  const descEls = [];
+  const descEl = () => { const el = h('div', { class: 'pr-desc' }, desc); descEls.push(el); return el; };
+  const editLink = () => h('button', { type: 'button', class: 'linkbtn pr-editlink', onClick: async () => {
+    if (committed) return;
+    cd.stop();
+    const u = await openEditItem(item);
+    if (!u || committed) return;
+    if (u.status === 'researching') { committed = true; opts.onDone(null); return; }
+    Object.assign(item, u);
+    descEls.forEach((el) => { el.textContent = descText(); });
+  } }, 'Wrong brand? Edit');
   if (isBin) {
     const t = tierInfo(item);
     root.appendChild(h('p', { class: 'pr-kicker' }, 'Under ' + money((settingsCache && settingsCache.rules && settingsCache.rules.bin_below) || 10) + ': label it and put it in the ' + t.label));
     root.appendChild(h('div', { class: 'pr-card pr-bin' },
       h('button', { type: 'button', class: 'pr-price-btn', 'aria-label': 'Change price', onClick: () => (cd.running ? cd.interrupt() : openKeypad()) },
         h('span', { class: 'price-huge' }, money(t.price)), h('span', { class: 'pr-bin-word' }, 'BIN')),
-      h('div', { class: 'pr-desc' }, desc || 'Item'),
+      descEl(), editLink(),
       h('div', { class: 'pr-cdrow' }, cd, h('span', { class: 'mute' }, 'Tap the price to change it'))));
     root.appendChild(BigButton('Accept ✓', () => commit(null), { class: 'btn-huge' }));
   } else {
@@ -182,7 +197,7 @@ function showResult(host, item, opts) {
       h('button', { type: 'button', class: 'pr-price-btn', 'aria-label': 'Change price', onClick: () => (cd.running ? cd.interrupt() : openKeypad()) },
         h('span', { class: 'price-huge' }, money(item.ai_price)), h('span', { class: 'pr-edit' }, '✎ change')),
       item.retail_confident && retail > 0 ? h('div', { class: 'pr-was' }, 'Was ' + money(retail) + ' new') : null,
-      h('div', { class: 'pr-desc' }, desc || 'Item'),
+      descEl(), editLink(),
       item.nwt ? h('div', { class: 'pill pill-labeled' }, 'New with tags') : null,
       h('div', { class: 'pr-cdrow' }, cd, h('span', { class: 'mute' }, 'Tap the price to change it'))));
     if (opts.mode === 'review') root.appendChild(compsBlock(item));
@@ -408,7 +423,7 @@ function renderReview(container, ctx) {
       return h('button', { type: 'button', class: 'li', onClick: () => open(it) },
         h('img', { class: 'thumb', src: it.thumb_url || 'icon.svg', alt: '', loading: 'lazy' }),
         h('div', { class: 'main' },
-          h('div', { class: 't1' }, [it.brand, it.title].filter(Boolean).join(' · ') || it.id),
+          h('div', { class: 't1' }, [brandDisplay(it), it.title].filter(Boolean).join(' · ') || it.id),
           h('div', { class: 't2' }, looking ? '⏳ Looking up sold prices…' : lockedBy ? '🔒 ' + lockedBy + ' has it open' : (it.size ? 'Size ' + it.size + ' · ' : '') + it.id)),
         h('div', { class: 'price' }, looking ? '…' : money(it.ai_price)));
     })));
@@ -470,6 +485,7 @@ const css = `
 .pr-edit { font-size: 16px; font-weight: 700; color: var(--accent); margin-top: 4px; }
 .pr-was { font-size: 22px; font-weight: 700; margin-top: 6px; }
 .pr-desc { font-size: 20px; margin: 10px 0 6px; overflow-wrap: anywhere; }
+.pr-editlink { display: block; margin: 0 auto 6px; font-size: 16px; }
 .pr-flag { display: inline-block; background: var(--ink); color: #fff; font-weight: 800; padding: 3px 12px; border-radius: 12px; margin-bottom: 6px; }
 .pr-cdrow { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 10px; }
 .pr-foot { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px; margin-top: 10px; }

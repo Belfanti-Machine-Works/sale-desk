@@ -87,7 +87,7 @@ function wasText(item) {
   return 'Was ' + money(Math.round(r)) + ' new';
 }
 function descText(item) {
-  return [item.brand, item.title, item.size].map(s => String(s ?? '').trim()).filter(Boolean).join(' · ');
+  return [item.brand_display || item.brand, item.title, item.size].map(s => String(s ?? '').trim()).filter(Boolean).join(' · ');
 }
 function truthy(v) { return v === true || v === 'true' || v === 'TRUE' || v === 1 || v === '1'; }
 /** Price font size (mm) for the front: shrink for long prices so it stays on one line. */

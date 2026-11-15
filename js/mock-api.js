@@ -117,6 +117,15 @@ const CATALOG = [
   ['Cat ears headband', 'Party City', 'Costumes', 'One size', 'good', false, 6, false, 3, false, true, 'binned'],
 ];
 const PEOPLE = ['Alex', 'Jordan', 'Sam'];
+// collab / style_code for a few seed items. 'Running shoes' reproduces the real S-00009 bug (a style code read
+// as the brand), so "Edit details" has something to fix.
+const EXTRAS = {
+  'Running shoes': { brand: 'JR286' },
+  'Fleece jacket': { collab: 'Supreme', style_code: 'NF0A5J4Y' },
+  'Platform sandals': { collab: 'Disney' },
+  'Yoga leggings': { style_code: 'LW5CT3S' },
+  'Leather crossbody bag': { style_code: 'F23537' },
+};
 
 function seed({ fresh = false } = {}) {
   const rules = clone(DEFAULT_RULES);
@@ -142,7 +151,7 @@ function seed({ fresh = false } = {}) {
       ai_cost_usd: researched ? 0.1 : 0.0004,
       used_value_est: used, notable_brand: notable,
       _ai: ai,
-    });
+    }, EXTRAS[title] || {});
     if (['priced', 'labeled', 'sold', 'binned'].includes(status)) {
       const override = i % 7 === 3;
       it.final_price = override ? it.ai_price + 5 : it.ai_price;
@@ -173,7 +182,7 @@ function seed({ fresh = false } = {}) {
     promo_checklist: { t7: { done: false }, t2: { done: false }, d0: { done: false } },
   }];
   const db = {
-    v: 3, seq: items.length, saleSeq: 0, createCount: 0,
+    v: 4, seq: items.length, saleSeq: 0, createCount: 0,
     pins: fresh ? {} : { admin: '1111', pricer: '2222', helper: '3333' },
     hasKey: !fresh,
     settings: { venmo_handle: '@Sale-Desk-Demo', zelle_handle: 'demo@example.com', venmo_qr_file_id: '', venmo_qr_url: '', rules, label_mode: 'batch', users: fresh ? [] : PEOPLE.slice() },
@@ -202,6 +211,7 @@ function blankItem() {
     final_price: '', price_source: '', route: 'label', tier: '', premium: false, promo_safe: true, photo_ids: {},
     thumb_url: '', notes: '', sale_event: '', sold_price: '', sold_at: '', sale_id: '', priced_by: '', priced_at: '',
     review_lock_by: '', review_lock_until: '', ai_cost_usd: 0, used_value_est: 0, notable_brand: false,
+    collab: '', style_code: '',
   };
 }
 function seedSales(db) {
@@ -240,7 +250,7 @@ function loadDb() {
     }
   } else sessionStorage.removeItem('saleDeskMockResetDone');
   try { db = JSON.parse(sessionStorage.getItem(DB_KEY) || 'null'); } catch (e) { db = null; }
-  if (!db || db.v !== 3) { db = seed(); save(); }
+  if (!db || db.v !== 4) { db = seed(); save(); }
   return db;
 }
 function save() {
@@ -285,7 +295,7 @@ export async function handle(action, params = {}) {
     }
     const data = await fn(params, user);
     save();
-    out = { ok: true, data: clone(strip(data)) };
+    out = { ok: true, data: withBrandDisplay(clone(strip(data))) };
   } catch (e) {
     if (e instanceof Fail) out = { ok: false, error: Object.assign({}, e) };
     else { console.error('mock-api internal error', e); out = { ok: false, error: { code: 'INTERNAL', message: String(e && e.message) } }; }
@@ -293,6 +303,19 @@ export async function handle(action, params = {}) {
   const wait = delayFor(action) - (Date.now() - started);
   if (wait > 0) await new Promise((r) => setTimeout(r, wait));
   return out;
+}
+// Mirrors the backend's computed brand_display ("Nike × Off-White") on every item in a response.
+function brandDisplay(it) {
+  const b = String(it.brand || '').trim(), c = String(it.collab || '').trim();
+  return c ? (b ? b + ' × ' + c : c) : b;
+}
+function withBrandDisplay(x) {
+  if (Array.isArray(x)) { x.forEach(withBrandDisplay); return x; }
+  if (x && typeof x === 'object') {
+    if (/^S-\d+$/.test(x.id || '') && 'brand' in x) x.brand_display = brandDisplay(x);
+    for (const v of Object.values(x)) if (v && typeof v === 'object') withBrandDisplay(v);
+  }
+  return x;
 }
 // drop private keys (prefixed _) from items before returning
 function strip(x) {
@@ -404,7 +427,7 @@ const ACTIONS = {
     const id = 'S-' + pad(++db.seq, 5);
     Object.assign(it, {
       id, status: r.route === 'research' ? 'researching' : 'new', created_at: now(), created_by: user.name,
-      title: ai.title, brand: ai.brand, category: ai.category, size: ai.size, condition: ai.condition, nwt: ai.nwt,
+      title: ai.title, brand: ai.brand, collab: ai.collab || '', style_code: ai.style_code || '', category: ai.category, size: ai.size, condition: ai.condition, nwt: ai.nwt,
       retail_est: ai.retail_est, retail_confident: ai.retail_confident, promo_safe: ai.promo_safe,
       ai_price: r.ai_price, route: r.route, tier: r.tier, premium: r.premium, notes: ai.notes || '',
       used_value_est: ai.used_value_est, notable_brand: !!ai.notable_brand,
@@ -468,6 +491,32 @@ const ACTIONS = {
     Object.assign(it, { ai_price: r.ai_price, premium: r.premium, ai_cost_usd: r2((it.ai_cost_usd || 0) + 0.0004) });
     if (it.status !== 'binned') it.tier = r.route === 'bin' ? r.tier : it.tier;
     log(user, 'item.reprice', id, { ai_price: r.ai_price }, 0.0004);
+    return it;
+  },
+  'item.edit'(p, user) {
+    const it = getItem(p.id);
+    if (it.status === 'sold') fail('ALREADY_SOLD', 'That item was already sold.', { ids: [it.id] });
+    if (it.status === 'pulled') fail('INVALID', 'That item was pulled from the sale. Put it back on sale first.');
+    if (lockActive(it, user.name)) fail('LOCKED', it.review_lock_by + ' has this item open right now.', { by: it.review_lock_by });
+    const caps = { brand: 60, collab: 60, title: 80, size: 30, category: 40, style_code: 40, notes: 500 };
+    const patch = {};
+    for (const [k, max] of Object.entries(caps)) {
+      if (p[k] === undefined) continue;
+      patch[k] = String(p[k] ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
+    }
+    if (patch.title !== undefined && !patch.title) fail('INVALID', 'Give the item a name.');
+    if (p.condition !== undefined && p.condition !== null && p.condition !== '') {
+      const c = String(p.condition).trim().toLowerCase().replace(/[\s-]+/g, '_');
+      if (!['new', 'like_new', 'good', 'fair'].includes(c)) fail('INVALID', 'Condition must be new, like new, good or fair.');
+      patch.condition = c;
+    }
+    const changed = {};
+    for (const k of Object.keys(patch)) { if (String(it[k] ?? '') === patch[k]) delete patch[k]; else changed[k] = [it[k], patch[k]]; }
+    const research = (p.recheck === true || p.recheck === 'true') && db.settings.rules.stage2_mode !== 'off';
+    Object.assign(it, patch);
+    if (it._ai) Object.assign(it._ai, patch);
+    if (research) Object.assign(it, { status: 'researching', route: 'research', comp_low: '', comp_high: '', comp_links: [], review_lock_by: '', review_lock_until: '' });
+    log(user, 'item.edit', it.id, { changed, recheck: research });
     return it;
   },
   'item.pull'({ id }, user) {

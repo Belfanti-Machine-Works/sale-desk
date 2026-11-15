@@ -3,6 +3,7 @@ import { call } from './api.js';
 import { session, can, emit } from './state.js';
 import { h, BigButton, toast, keypad, confirmModal, sheet, money, showError, spinner, empty, imageToJpeg, STATUS_LABEL } from './ui.js';
 import { printNow, addToQueue } from './price.js';
+import { openEditItem, brandDisplay } from './edit-item.js';
 
 const PAGE = 30;
 const FILTERS = [
@@ -24,7 +25,7 @@ function priceOf(it) {
   const f = it.final_price;
   return f !== '' && f != null ? Number(f) : Number(it.ai_price) || 0;
 }
-function descOf(it) { return [it.brand, it.title].filter(Boolean).join(' · ') || it.id; }
+function descOf(it) { return [brandDisplay(it), it.title].filter(Boolean).join(' · ') || it.id; }
 let tierCache = null; // [{tier, label, price}] from tiers.list, for "$3 bin" labels
 async function loadTiers() {
   if (tierCache) return;
@@ -141,6 +142,7 @@ function renderInventory(container, ctx) {
         h('h2', null, descOf(item)),
         h('dl', { class: 'inv-facts' },
           fact('Item #', item.id),
+          fact('Style #', item.style_code),
           fact('Size', item.size), fact('Condition', ({ new: 'New', like_new: 'Like new', good: 'Good', fair: 'Fair' })[item.condition] || item.condition),
           fact('Category', item.category),
           item.status !== 'binned' && item.final_price !== '' && Number(item.final_price) !== Number(item.ai_price) ? fact('AI said', money(item.ai_price)) : null,
@@ -216,6 +218,17 @@ function renderInventory(container, ctx) {
           toast('Back on sale', 'ok'); replaceItem(u); paint(u);
         }));
         box.appendChild(b);
+      }
+      if (can('item.edit') && !['sold', 'pulled'].includes(st)) {
+        const be = BigButton('✎  Edit details', () => run(be, async () => {
+          let latest = null, shown = false; // research can come back before the form finishes closing
+          const u = await openEditItem(item, { onResearched: (r) => { latest = r; if (shown) { replaceItem(r); if (body.isConnected) paint(r); } } });
+          if (!u) return;
+          shown = true;
+          replaceItem(latest || u);
+          if (body.isConnected) paint(latest || u);
+        }), { variant: 'secondary' });
+        box.appendChild(be);
       }
       if (!['sold', 'pulled', 'binned'].includes(st)) {
         const b = BigButton('Pull from sale', () => run(b, async () => {
