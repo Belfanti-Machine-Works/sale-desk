@@ -1,7 +1,7 @@
 // Price tab (camera -> AI price -> countdown -> label) and Review queue (CONTRACT §8, PLAN "Pricing").
 import { call, MOCK } from './api.js';
 import { session, can, on, emit } from './state.js';
-import { h, BigButton, toast, keypad, Countdown, confirmModal, money, showError, spinner, empty, imageToJpeg } from './ui.js';
+import { h, BigButton, toast, keypad, Countdown, confirmModal, money, showError, errorMessage, spinner, empty, imageToJpeg } from './ui.js';
 import { openEditItem, brandDisplay } from './edit-item.js';
 import { celebrate } from './celebrate.js';
 
@@ -144,9 +144,16 @@ function showResult(host, item, opts) {
     if (committed) return;
     committed = true;
     cd.stop();
+    const params = price === null ? { id: item.id, source: 'ai' } : { id: item.id, final_price: price, source: 'override' };
+    if (opts.mode === 'price') {
+      // Don't make the pricer wait for the save: straight back to the camera, save + label queue in the
+      // background. If the save fails, the item is still safe in Review (status 'review').
+      opts.onDone(null);
+      saveInBackground(params);
+      return;
+    }
     root.querySelectorAll('button').forEach((b) => { b.disabled = true; });
     saving.hidden = false;
-    const params = price === null ? { id: item.id, source: 'ai' } : { id: item.id, final_price: price, source: 'override' };
     try {
       const done = await call('item.accept', params);
       emit('item:priced', done);
@@ -164,6 +171,18 @@ function showResult(host, item, opts) {
       root.querySelectorAll('button').forEach((b) => { b.disabled = false; });
       showError(e);
       if (e.code === 'ALREADY_SOLD' || e.code === 'NOT_FOUND') opts.onDone(null);
+    }
+  }
+
+  async function saveInBackground(params) {
+    try {
+      const done = await call('item.accept', params);
+      emit('item:priced', done);
+      if (done.route === 'bin') toast(done.id + ': label it, then put it in the ' + tierInfo(done).label + '.', 'ok');
+      await labelAfterAccept(done);
+    } catch (e) {
+      toast(item.id + " didn't save (" + errorMessage(e) + "). It's waiting in Review.", 'error');
+      emit('badge');
     }
   }
 
@@ -190,7 +209,7 @@ function showResult(host, item, opts) {
         h('span', { class: 'price-huge' }, money(t.price)), h('span', { class: 'pr-bin-word' }, 'BIN')),
       descEl(), editLink(),
       h('div', { class: 'pr-cdrow' }, cd, h('span', { class: 'mute' }, 'Tap the price to change it'))));
-    root.appendChild(BigButton('Accept ✓', () => commit(null), { class: 'btn-huge' }));
+    root.appendChild(actionBar('Accept ✓'));
   } else {
     const retail = Number(item.retail_est) || 0;
     root.appendChild(h('div', { class: 'pr-card' },
@@ -202,7 +221,13 @@ function showResult(host, item, opts) {
       item.nwt ? h('div', { class: 'pill pill-labeled' }, 'New with tags') : null,
       h('div', { class: 'pr-cdrow' }, cd, h('span', { class: 'mute' }, 'Tap the price to change it'))));
     if (opts.mode === 'review') root.appendChild(compsBlock(item));
-    root.appendChild(BigButton(opts.mode === 'review' ? 'Looks good ✓' : 'Looks good ✓ Next', () => commit(null), { class: 'btn-huge' }));
+    root.appendChild(actionBar('Looks good ✓'));
+  }
+  // Thumb zone: bar pinned just above the tab bar. Change price on the left, Accept on the right (owner's call).
+  function actionBar(okLabel) {
+    return h('div', { class: 'pr-actions' },
+      BigButton('✎ Change price', () => openKeypad(), { variant: 'secondary', class: 'btn-huge pr-change' }),
+      BigButton(okLabel, () => commit(null), { class: 'btn-huge pr-ok' }));
   }
   root.appendChild(saving);
   const foot = h('div', { class: 'pr-foot' });
@@ -262,7 +287,8 @@ function renderPrice(container) {
     view.innerHTML = '';
     view.appendChild(spinner('Getting the photo ready…'));
     try {
-      const img = await imageToJpeg(file, 1280, 0.8);
+      // 1024px @ 0.75 is plenty to read tags and ~40% smaller to upload than 1280 @ 0.8 (faster on cell).
+      const img = await imageToJpeg(file, 1024, 0.75);
       flow.photos[r] = img.b64;
       flow.previews[r] = img.dataUrl;
     } catch (e) {
@@ -495,6 +521,14 @@ const css = `
 .pr-links { margin: 0; padding-left: 20px; }
 .pr-links li { padding: 6px 0; }
 .pr-links a { font-weight: 600; }
+/* Thumb-zone action bar: pinned just above the tab bar; "Change price" on the right for a right thumb. */
+.pr-actions { position: fixed; left: calc(16px + var(--safe-left, 0px)); right: calc(16px + var(--safe-right, 0px));
+  bottom: calc(var(--tab-h, 68px) + var(--safe-bottom, 0px) + 8px); z-index: 30;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding-top: 10px;
+  background: linear-gradient(rgba(255,255,255,0), #fff 12px); }
+.pr-result { padding-bottom: 120px; } /* room so the fixed bar never covers the footer links */
+.pr-actions .btn { width: 100%; margin: 0; min-height: 96px; font-size: 24px; line-height: 1.15; padding: 8px 10px; }
+.pr-actions .pr-change { border-width: 3px; }
 `;
 document.head.appendChild(h('style', { 'data-module': 'price' }, css));
 
