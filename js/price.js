@@ -4,6 +4,7 @@ import { session, can, on, emit } from './state.js';
 import { h, BigButton, toast, keypad, confirmModal, sheet, money, showError, errorMessage, spinner, empty, imageToJpeg } from './ui.js';
 import { openEditItem, brandDisplay } from './edit-item.js';
 import { celebrate } from './celebrate.js';
+import { soldSearchLinks } from './sold-links.js';
 
 const ROLES = ['label', 'tag', 'item'];
 const PROMPTS = {
@@ -171,16 +172,20 @@ function showResult(host, item, opts) {
     };
   })();
   // Item photo on the card; tap for a big view (stops the auto-accept so nothing is accepted mid-look).
+  // Always show a photo box: the item photo, or a clear placeholder when none was saved / it won't load.
   function thumbEl() {
-    if (!item.thumb_url) return null;
+    const noPhoto = (why) => h('div', { class: 'pr-thumb pr-thumb-none' }, h('span', null, '📷'), h('span', null, why));
+    if (!item.thumb_url) return h('div', { class: 'pr-thumb-btn' }, noPhoto('No photo saved'));
     const big = String(item.thumb_url).replace(/([?&]sz=)w\d+/, '$1w1200');
-    return h('button', { type: 'button', class: 'pr-thumb-btn', 'aria-label': 'See the photo bigger', onClick: () => {
+    const img = h('img', { class: 'pr-thumb', src: item.thumb_url, alt: 'Item photo', loading: 'eager', decoding: 'async' });
+    const btn = h('button', { type: 'button', class: 'pr-thumb-btn', 'aria-label': 'See the photo bigger', onClick: () => {
       cd.stop();
       const s = sheet(h('div', { class: 'pr-photo-sheet' },
         h('img', { src: big, alt: 'Item photo' }),
         BigButton('Close', () => s.close(), { variant: 'secondary' })));
-    } }, h('img', { class: 'pr-thumb', src: item.thumb_url, alt: 'Item photo', loading: 'eager', decoding: 'async' }),
-      h('span', { class: 'pr-thumb-zoom' }, '⤢'));
+    } }, img, h('span', { class: 'pr-thumb-zoom' }, '⤢'));
+    img.addEventListener('error', () => { btn.replaceWith(h('div', { class: 'pr-thumb-btn' }, noPhoto("Photo didn't load"))); });
+    return btn;
   }
   let hintEl = null;
   const hint = () => (hintEl = h('div', { class: 'mute pr-hint' }, 'Accepts by itself when the button fills. Tap Change price to stop it.'));
@@ -262,6 +267,7 @@ function showResult(host, item, opts) {
       h('button', { type: 'button', class: 'pr-price-btn', 'aria-label': 'Change price', onClick: () => (cd.running ? cd.interrupt() : openKeypad()) },
         h('span', { class: 'price-huge' }, money(t.price)), h('span', { class: 'pr-bin-word' }, 'BIN')),
       descEl(), editLink(), hint()));
+    if (opts.mode === 'review') root.appendChild(compsBlock(item, () => cd.stop()));
     root.appendChild(actionBar('Accept ✓'));
   } else {
     const retail = Number(item.retail_est) || 0;
@@ -274,7 +280,11 @@ function showResult(host, item, opts) {
       descEl(), editLink(),
       item.nwt ? h('div', { class: 'pill pill-labeled' }, 'New with tags') : null,
       hint()));
-    if (opts.mode === 'review') root.appendChild(compsBlock(item));
+    if (opts.mode === 'review') root.appendChild(compsBlock(item, () => cd.stop()));
+    else {
+      const sold = soldButtons(item, () => cd.stop(), 'Check what it sold for:');
+      if (sold) root.appendChild(sold);
+    }
     root.appendChild(actionBar('Looks good ✓'));
   }
   // Thumb zone: bar pinned just above the tab bar. Change price on the left, Accept on the right (owner's call).
@@ -300,19 +310,58 @@ function showResult(host, item, opts) {
   return { destroy() { cd.stop(); committed = true; } };
 }
 
-function compsBlock(item) {
-  const low = Number(item.comp_low) || 0, high = Number(item.comp_high) || 0;
+// comp_links entries: strings (older rows), or objects {url, title, kind:'comp'|'search', site?, price?, sold_date?}
+// written by Research.js. kind 'search' = the sold-search pages the backend gave the AI (marks it as searched).
+function compLinks(item) {
   let links = item.comp_links;
   if (typeof links === 'string') { try { links = JSON.parse(links); } catch (e) { links = []; } }
-  links = Array.isArray(links) ? links : [];
+  return (Array.isArray(links) ? links : []).map((l) => (typeof l === 'string' ? { url: l, title: '', kind: 'comp', legacy: true } : l))
+    .filter((l) => l && /^https?:\/\//.test(l.url || ''));
+}
+const SEARCHED = 'Searched eBay, Poshmark, Depop, Mercari';
+const plural = (n, word) => n + ' ' + word + (n === 1 ? '' : 's');
+
+// "Searched … · 6 listings (1 sold, 5 for sale; asking counted at 75%)" or "… · no matching listings. Check below."
+function compsSummary(item, links) {
+  const comps = links.filter((l) => l.kind !== 'search');
+  const searched = links.some((l) => l.kind === 'search');
+  const low = Number(item.comp_low) || 0, high = Number(item.comp_high) || 0;
+  if (comps.length) {
+    if (comps.every((l) => l.legacy)) return SEARCHED + ' · ' + plural(comps.length, 'sold comp');
+    const asking = comps.filter((l) => l.listing === 'asking').length, sold = comps.length - asking;
+    const parts = [];
+    if (sold) parts.push(sold + ' sold');
+    if (asking) parts.push(asking + ' for sale; asking counted at 75%');
+    return SEARCHED + ' · ' + plural(comps.length, 'listing') + ' (' + parts.join(', ') + ')';
+  }
+  if (searched) return SEARCHED + ' · no matching listings. Check below.';
+  if (low || high) return 'Sold-price estimate (no listings to show). Check below.';
+  return 'Not looked up yet. The price is from the photo. Check below.';
+}
+
+// Three one-tap sold searches; any tap stops the auto-accept countdown (the page opens in a new tab).
+function soldButtons(item, onTap, label) {
+  const links = soldSearchLinks(item);
+  if (!links.length) return null;
+  return h('div', { class: 'pr-sold' },
+    label ? h('p', { class: 'pr-sold-label' }, label) : null,
+    h('div', { class: 'pr-sold-row' }, links.map((l) => h('a', {
+      class: 'btn btn-secondary pr-sold-btn', href: l.url, target: '_blank', rel: 'noopener noreferrer',
+      'data-site': l.site, onClick: () => onTap && onTap(),
+    }, l.label))));
+}
+
+function compsBlock(item, onTap) {
+  const low = Number(item.comp_low) || 0, high = Number(item.comp_high) || 0;
+  const links = compLinks(item);
+  const comps = links.filter((l) => l.kind !== 'search');
   return h('div', { class: 'card pr-comps' },
-    h('h3', null, 'What similar items sold for'),
-    low || high ? h('p', { class: 'pr-range' }, money(low) + ' – ' + money(high)) : h('p', { class: 'mute' }, 'No sold prices found. The price is from the photo only.'),
-    links.length ? h('ul', { class: 'pr-links' }, links.slice(0, 5).map((l) => {
-      const url = typeof l === 'string' ? l : l.url;
-      const title = typeof l === 'string' ? hostOf(l) : (l.title || hostOf(l.url));
-      return /^https?:\/\//.test(url || '') ? h('li', null, h('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, title + ' ↗')) : null;
-    })) : null);
+    h('p', { class: 'pr-searched' }, compsSummary(item, links)),
+    low || high ? h('p', { class: 'pr-range' }, money(low) + ' – ' + money(high)) : null,
+    soldButtons(item, onTap),
+    comps.length ? h('ul', { class: 'pr-links' }, comps.slice(0, 5).map((l) =>
+      h('li', null, h('a', { href: l.url, target: '_blank', rel: 'noopener noreferrer', onClick: () => onTap && onTap() },
+        (l.title || hostOf(l.url)) + ' ↗')))) : null);
 }
 function hostOf(u) { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return 'link'; } }
 
@@ -589,7 +638,13 @@ const css = `
 .pr-flag { display: inline-block; background: var(--ink); color: #fff; font-weight: 800; padding: 3px 12px; border-radius: 12px; margin-bottom: 6px; }
 .pr-cdrow { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 10px; }
 .pr-foot { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
+.pr-comps { padding: 12px; }
+.pr-searched { font-size: 17px; font-weight: 600; line-height: 1.3; margin: 0 0 6px; }
 .pr-comps .pr-range { font-size: 28px; font-weight: 800; margin: 0 0 6px; }
+.pr-sold { margin: 0 0 6px; }
+.pr-sold-label { font-weight: 700; margin: 0 0 6px; }
+.pr-sold-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.pr-sold-row .btn { margin: 0; padding: 6px 4px; font-size: 17px; min-height: 64px; overflow-wrap: anywhere; }
 .pr-links { margin: 0; padding-left: 20px; }
 .pr-links li { padding: 6px 0; }
 .pr-links a { font-weight: 600; }
@@ -607,6 +662,8 @@ const css = `
 .pr-hint { font-size: 15px; margin-top: 10px; }
 .pr-thumb-btn { position: relative; display: block; margin: 0 auto 8px; padding: 0; border: 0; background: none; cursor: zoom-in; }
 .pr-thumb { display: block; height: 132px; max-width: 100%; width: auto; object-fit: contain; border-radius: 12px; border: 2px solid var(--line); background: var(--bg-2); }
+.pr-thumb-none { width: 132px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: var(--ink-2); font-size: 14px; font-weight: 700; border-style: dashed; }
+.pr-thumb-none span:first-child { font-size: 30px; }
 .pr-thumb-zoom { position: absolute; right: 6px; bottom: 6px; background: rgba(0,0,0,.6); color: #fff; border-radius: 8px; padding: 0 6px; font-size: 18px; line-height: 26px; }
 .pr-photo-sheet img { display: block; width: 100%; max-height: 70vh; object-fit: contain; border-radius: 12px; margin-bottom: 12px; background: var(--bg-2); }
 `;

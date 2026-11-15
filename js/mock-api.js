@@ -6,15 +6,18 @@
 // State persists in sessionStorage. Dev switches (query string):
 //   ?mockreset=1  re-seed the fake data      ?mockfresh=1  empty, un-set-up backend (tests setup.init)
 //   localStorage.saleDeskMockFast = '1'      skip the artificial delays
-// item.create routes cycle bin -> label -> research; pass hint:'bin'|'label'|'research'
-// (and/or 'unreadable' for a label the AI couldn't read) to force one.
+// item.create template sets cycle bin -> label -> research, then the rules decide (with research_value_at 15 most
+// "label" templates research too). hint:'bin'|'label'|'research' picks the set, and hint 'label' also skips
+// research so the Price tab's label card can be seen; add 'unreadable' for a label the AI couldn't read.
+
+import { soldSearchLinks } from './sold-links.js';
 
 const DB_KEY = 'saleDeskMockDb';
 const DEFAULT_RULES = {
   used_pct: [0.25, 0.35], nwt_pct: [0.40, 0.50], pick: 'mid',
   round: [{ lt: 10, to: 1 }, { lt: 50, to: 5 }, { lt: 100000, to: 10 }],
   bin_below: 10, tiers: [{ max: 1.99, tier: 'T1' }, { max: 3.99, tier: 'T3' }, { max: 9.99, tier: 'T5' }],
-  research_at: 10, premium_at: 75, min_price: 1, stage2_mode: 'search',
+  research_at: 10, research_value_at: 15, premium_at: 75, min_price: 1, stage2_mode: 'search',
 };
 const ROLES = { helper: 1, pricer: 2, admin: 3 };
 const HELPER = ['scan', 'checkout', 'sales.list', 'dashboard', 'tiers.list', 'events.list', 'settings.get'];
@@ -60,16 +63,64 @@ function pick(range, how) {
   if (typeof how === 'number') return range[0] + (range[1] - range[0]) * Math.min(1, Math.max(0, how));
   return (range[0] + range[1]) / 2;
 }
-// Mirrors backend/Rules.js applyRules(ai, comps, rules).
+// Mirrors backend/Rules.js applyRules(ai, comps, rules): comps blended with used_value_est by
+// w = min(dated + 0.5 * undated, 3) / 3; before stage 2, research (resale value >= research_value_at, a notable
+// brand, or price >= research_at) beats the bin.
+const blank = (v) => v === undefined || v === null || v === '';
+function effCount(c) {
+  if (!blank(c.comp_dated) || !blank(c.comp_undated)) return (Number(c.comp_dated) || 0) + 0.5 * (Number(c.comp_undated) || 0);
+  return blank(c.comp_count) ? 3 : Number(c.comp_count) || 0;
+}
 function applyRules(ai, comps, rules) {
-  const base = comps && comps.comp_mid > 0 ? comps.comp_mid : ai.used_value_est;
+  const used = Math.max(0, Number(ai.used_value_est) || 0);
+  const mid = comps ? Number(comps.comp_mid) || 0 : 0;
+  let base = used;
+  if (mid > 0) {
+    const w = used > 0 ? Math.min(effCount(comps), 3) / 3 : 1;
+    base = w * mid + (1 - w) * used;
+  }
   const pct = pick(ai.nwt ? rules.nwt_pct : rules.used_pct, rules.pick);
   const price = roundPrice(base * pct, rules);
+  const valueAt = Number(blank(rules.research_value_at) ? 15 : rules.research_value_at) || 0;
+  const research = !comps && rules.stage2_mode !== 'off' &&
+    ((valueAt > 0 && used >= valueAt) || !!ai.notable_brand || price >= rules.research_at);
   let route = 'label', tier = '';
-  const t = price < rules.bin_below ? rules.tiers.slice().sort((a, b) => a.max - b.max).find((x) => price <= x.max + 1e-9) : null;
-  if (t) { route = 'bin'; tier = t.tier; }
-  else if (!comps && rules.stage2_mode !== 'off' && (price >= rules.research_at || ai.notable_brand)) route = 'research';
+  if (research) route = 'research';
+  else {
+    const t = price < rules.bin_below ? rules.tiers.slice().sort((a, b) => a.max - b.max).find((x) => price <= x.max + 1e-9) : null;
+    if (t) { route = 'bin'; tier = t.tier; }
+  }
   return { ai_price: price, route, tier, premium: price >= rules.premium_at };
+}
+
+// Fake stage-2 result for an item, shaped like Research.js writes it: comp_links = comp objects (some with no
+// visible date) followed by the sold-search pages (kind 'search'). About 1 in 6 finds nothing.
+const SITE_NAMES = { ebay: 'eBay', poshmark: 'Poshmark', mercari: 'Mercari', depop: 'Depop' };
+function mockComps(it, used) {
+  const h = hashStr(it.id + '|' + it.title);
+  const search = soldSearchLinks(it).map((l) => ({ url: l.url, title: l.label + ' search', kind: 'search', site: l.site }));
+  const n = h % 6;
+  if (!n) return { comp_low: '', comp_high: '', comp_mid: 0, comp_count: 0, comp_dated: 0, comp_undated: 0, links: search };
+  const mid = Math.max(2, Math.round((used || 20) * (0.8 + ((h >>> 3) % 40) / 100)));
+  const sites = ['ebay', 'poshmark', 'mercari', 'depop'];
+  const comps = [];
+  for (let k = 0; k < n; k++) {
+    const site = sites[(h + k) % sites.length];
+    const dated = ((h >>> (k + 4)) % 3) !== 0;
+    const date = dated ? new Date(Date.now() - (1 + ((h >>> (k * 2)) % 85)) * 86400000).toISOString().slice(0, 10) : '';
+    const url = { ebay: 'https://www.ebay.com/itm/mock' + (h % 100000 + k), poshmark: 'https://poshmark.com/listing/mock-' + k,
+      mercari: 'https://www.mercari.com/us/item/mock' + k + '/', depop: 'https://www.depop.com/products/mock-' + k + '/' }[site];
+    comps.push({ site, url, price: Math.max(1, Math.round(mid * (0.7 + ((h >>> (k + 2)) % 60) / 100))), sold_date: date });
+  }
+  comps.sort((a, b) => (a.sold_date ? 0 : 1) - (b.sold_date ? 0 : 1) || (b.sold_date > a.sold_date ? 1 : -1));
+  const ps = comps.map((c) => c.price).sort((a, b) => a - b), half = Math.floor(n / 2);
+  const dated = comps.filter((c) => c.sold_date).length;
+  return {
+    comp_low: ps[0], comp_high: ps[n - 1], comp_mid: n % 2 ? ps[half] : (ps[half - 1] + ps[half]) / 2,
+    comp_count: n, comp_dated: dated, comp_undated: n - dated,
+    links: comps.map((c) => ({ url: c.url, title: SITE_NAMES[c.site] + ' · $' + c.price + ' · ' + (c.sold_date ? 'sold ' + c.sold_date : 'date not shown'),
+      kind: 'comp', site: c.site, price: c.price, sold_date: c.sold_date })).concat(search),
+  };
 }
 
 // ------------------------------------------------------------ seed data
@@ -102,6 +153,8 @@ const CATALOG = [
   ['Mermaid gown costume', 'Rubie’s', 'Costumes', 'S', 'like_new', false, 80, false, 90, false, true, 'review'],
   ['Tote bag', 'Kate Spade', 'Bags', 'One size', 'good', false, 228, true, 90, true, true, 'review'],
   ['Midi skirt', 'Reformation', 'Skirts', '4', 'like_new', true, 148, true, 70, true, true, 'review'],
+  ['Ribbed tank top', 'SKIMS', 'Tops', 'M', 'like_new', false, 48, true, 25, true, true, 'review'],
+  ['Platform boots', 'Dolls Kill', 'Shoes', '9', 'good', false, 110, true, 30, true, true, 'review'],
   ['Ski jacket', 'Columbia', 'Coats', 'XL', 'good', false, 180, true, 80, false, true, 'researching'],
   ['Platform sandals', 'Steve Madden', 'Shoes', '7', 'good', false, 90, false, 60, false, true, 'researching'],
   ['Lace bodysuit', 'Free People', 'Tops', 'S', 'like_new', false, 78, true, 45, true, true, 'sold'],
@@ -122,6 +175,7 @@ const PEOPLE = ['Alex', 'Jordan', 'Sam'];
 const EXTRAS = {
   'Running shoes': { brand: 'JR286' },
   'Fleece jacket': { collab: 'Supreme', style_code: 'NF0A5J4Y' },
+  'Ribbed tank top': { collab: 'Nike' },
   'Platform sandals': { collab: 'Disney' },
   'Yoga leggings': { style_code: 'LW5CT3S' },
   'Leather crossbody bag': { style_code: 'F23537' },
@@ -133,18 +187,19 @@ function seed({ fresh = false } = {}) {
   const items = CATALOG.map((c, i) => {
     const [title, brand, category, size, condition, nwt, retail, confident, used, notable, promoSafe, status] = c;
     const ai = { title, brand, category, size, condition, nwt, retail_est: retail, retail_confident: confident, used_value_est: used, notable_brand: notable, promo_safe: promoSafe };
-    const researched = status !== 'researching' && (status === 'review' || notable || used * 0.3 >= 25);
-    const comps = researched ? { comp_low: Math.round(used * 0.7), comp_high: Math.round(used * 1.4), comp_mid: used } : null;
+    const researched = status !== 'researching' && (status === 'review' || notable || used >= 15);
+    const id = 'S-' + pad(i + 1, 5);
+    const comps = researched ? mockComps(Object.assign({ id, title, brand }, EXTRAS[title] || {}), used) : null;
     const r = applyRules(ai, comps, rules);
     const created = new Date(start + i * 3 * 3600000).toISOString();
     const pricedBy = PEOPLE[i % 3];
     const it = blankItem();
     Object.assign(it, {
-      id: 'S-' + pad(i + 1, 5), status, created_at: created, created_by: pricedBy,
+      id, status, created_at: created, created_by: pricedBy,
       title, brand, category, size, condition, nwt, retail_est: retail, retail_confident: confident,
       comp_low: comps ? comps.comp_low : '', comp_high: comps ? comps.comp_high : '',
-      comp_links: comps ? sampleLinks(brand, title) : [],
-      ai_price: r.ai_price, route: status === 'binned' ? 'bin' : (r.route === 'bin' ? 'label' : r.route),
+      comp_links: comps ? comps.links : [],
+      ai_price: r.ai_price, route: status === 'binned' ? 'bin' : (r.route === 'bin' && status !== 'review' ? 'label' : r.route),
       tier: r.tier, premium: r.premium, promo_safe: promoSafe,
       photo_ids: { label: 'mock-l' + (i + 1), item: 'mock-i' + (i + 1) },
       thumb_url: svgThumb(brand.replace(/[^\w ]/g, '').slice(0, 16), (i * 37) % 360),
@@ -182,7 +237,7 @@ function seed({ fresh = false } = {}) {
     promo_checklist: { t7: { done: false }, t2: { done: false }, d0: { done: false } },
   }];
   const db = {
-    v: 4, seq: items.length, saleSeq: 0, createCount: 0,
+    v: 5, seq: items.length, saleSeq: 0, createCount: 0,
     pins: fresh ? {} : { admin: '1111', pricer: '2222', helper: '3333' },
     hasKey: !fresh,
     settings: { venmo_handle: '@Sale-Desk-Demo', zelle_handle: 'demo@example.com', venmo_qr_file_id: '', venmo_qr_url: '', rules, label_mode: 'batch', users: fresh ? [] : PEOPLE.slice() },
@@ -195,13 +250,6 @@ function nextWeekday(dow) {
   const d = new Date(); d.setHours(0, 0, 0, 0);
   d.setDate(d.getDate() + ((dow - d.getDay() + 7) % 7 || 7));
   return d;
-}
-function sampleLinks(brand, title) {
-  const q = encodeURIComponent((brand + ' ' + title).trim());
-  return [
-    { title: 'eBay sold listing', url: 'https://www.ebay.com/sch/i.html?LH_Sold=1&_nkw=' + q },
-    { title: 'Poshmark sold', url: 'https://poshmark.com/search?availability=sold_out&query=' + q },
-  ];
 }
 function tierPriceOf(t) { return { T1: 1, T3: 3, T5: 5, BAG: 10 }[t] || 3; }
 function blankItem() {
@@ -250,7 +298,7 @@ function loadDb() {
     }
   } else sessionStorage.removeItem('saleDeskMockResetDone');
   try { db = JSON.parse(sessionStorage.getItem(DB_KEY) || 'null'); } catch (e) { db = null; }
-  if (!db || db.v !== 4) { db = seed(); save(); }
+  if (!db || db.v !== 5) { db = seed(); save(); }
   return db;
 }
 function save() {
@@ -361,6 +409,7 @@ const TEMPLATES = {
     { title: 'Embroidered peasant dress', brand: 'Free People', category: 'Dresses', size: 'M', condition: 'like_new', nwt: false, retail_est: 148, retail_confident: true, used_value_est: 90, notable_brand: true, promo_safe: true },
     { title: 'Down parka', brand: 'Canada Goose', category: 'Coats', size: 'L', condition: 'good', nwt: false, retail_est: 1095, retail_confident: true, used_value_est: 400, notable_brand: true, promo_safe: true },
     { title: 'Leather belt bag', brand: 'Coach', category: 'Bags', size: 'One size', condition: 'good', nwt: true, retail_est: 250, retail_confident: true, used_value_est: 100, notable_brand: true, promo_safe: true },
+    { title: 'Ribbed tank top', brand: 'SKIMS', collab: 'Nike', category: 'Tops', size: 'M', condition: 'like_new', nwt: false, retail_est: 48, retail_confident: true, used_value_est: 25, notable_brand: true, promo_safe: true },
   ],
 };
 
@@ -425,12 +474,13 @@ const ACTIONS = {
     const route = ['bin', 'label', 'research'].find((r) => hintStr.includes(r)) || ['bin', 'label', 'research'][db.createCount % 3];
     db.createCount++;
     const h = hashStr(photos.item || photos.label || photos.tag);
-    const ai = clone(TEMPLATES[route][h % 3]);
+    const ai = clone(TEMPLATES[route][h % TEMPLATES[route].length]);
     if (!photos.label && !photos.tag) { ai.retail_confident = false; ai.notes = 'No label photo; brand guessed from item.'; }
     // ~1 in 8 creates (the 5th, 13th, ...) or hint:'unreadable' -> the AI couldn't read the label (CONTRACT §8 retake prompt)
     if (photos.label && (hintStr.includes('unreadable') || db.createCount % 8 === 5)) { ai.brand = ''; ai.notes = 'LABEL UNREADABLE: text on the label is blurry.'; ai.retail_confident = false; }
     ai.confidence = photos.label ? 0.85 : 0.5;
     const r = applyRules(ai, null, db.settings.rules);
+    if (hintStr.includes('label') && r.route === 'research') r.route = 'label'; // dev switch: see the label card
     const it = blankItem();
     const id = 'S-' + pad(++db.seq, 5);
     Object.assign(it, {
@@ -450,15 +500,14 @@ const ACTIONS = {
     const it = getItem(id);
     if (!['researching', 'review', 'new'].includes(it.status)) fail('INVALID', 'Item is ' + it.status);
     const ai = it._ai || { used_value_est: it.used_value_est || (it.ai_price || 10) / 0.3, nwt: it.nwt };
-    const mid = Math.round(ai.used_value_est * (0.8 + (hashStr(id) % 40) / 100));
-    const comps = { comp_low: Math.round(mid * 0.7), comp_high: Math.round(mid * 1.3), comp_mid: mid };
+    const comps = mockComps(it, ai.used_value_est);
     const r = applyRules(ai, comps, db.settings.rules);
     Object.assign(it, {
-      comp_low: comps.comp_low, comp_high: comps.comp_high, comp_links: sampleLinks(it.brand, it.title),
+      comp_low: comps.comp_low, comp_high: comps.comp_high, comp_links: comps.links,
       ai_price: r.ai_price, route: r.route, tier: r.tier, premium: r.premium,
       retail_confident: it.retail_confident || !!ai.retail_confident, status: 'review', ai_cost_usd: r2((it.ai_cost_usd || 0) + 0.1),
     });
-    log(user, 'item.research', id, comps, 0.1);
+    log(user, 'item.research', id, { comp_mid: comps.comp_mid, comp_count: comps.comp_count, comp_undated: comps.comp_undated }, 0.1);
     return it;
   },
   'item.accept'({ id, final_price, source }, user) {
