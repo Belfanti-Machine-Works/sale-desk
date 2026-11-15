@@ -16,7 +16,7 @@ function load() {
 export let session = load();
 
 // ---- role table (CONTRACT §3). admin ⊃ pricer ⊃ helper.
-const HELPER = ['scan', 'checkout', 'sales.list', 'dashboard', 'tiers.list', 'events.list', 'settings.get'];
+const HELPER = ['scan', 'checkout', 'sales.list', 'dashboard', 'tiers.list', 'events.list', 'settings.get', 'fun.egg'];
 // events.save is not in the §3 table; the promo agent edits events, so it sits with promo.* at pricer+.
 const PRICER = ['voidSale', 'item.*', 'review.*', 'inventory.*', 'tiers.count', 'promo.*', 'events.save'];
 const ADMIN = ['settings.*', 'setup.*', 'item.delete', 'reports.*'];

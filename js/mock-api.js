@@ -392,6 +392,14 @@ const ACTIONS = {
     log({ name: n }, 'login', '', { role });
     return { token: 'mock|' + role + '|' + encodeURIComponent(n), role, name: n };
   },
+  // Celebration config. Off unless localStorage.saleDeskMockEgg === '1' (dev testing); placeholder heart sprite.
+  'fun.egg'() {
+    let on = false, odds = 0.01;
+    try { on = localStorage.getItem('saleDeskMockEgg') === '1'; odds = Number(localStorage.getItem('saleDeskMockEggOdds') || 0.01); } catch (e) { /* ignore */ }
+    if (!on) return { enabled: false };
+    return { enabled: true, odds, palette: { r: '#e0245e', w: '#fff' },
+      sprite: ['.rr.rr.', 'rwrrrrr', 'rrrrrrr', '.rrrrr.', '..rrr..', '...r...'] };
+  },
   'setup.init'({ adminPin }) {
     if (db.pins.admin) fail('FORBIDDEN', 'Already set up');
     if (!/^\d{4}$/.test(String(adminPin || ''))) fail('INVALID', 'PIN must be 4 digits');

@@ -3,6 +3,7 @@ import { call, MOCK } from './api.js';
 import { session, can, on, emit } from './state.js';
 import { h, BigButton, toast, keypad, Countdown, confirmModal, money, showError, spinner, empty, imageToJpeg } from './ui.js';
 import { openEditItem, brandDisplay } from './edit-item.js';
+import { celebrate } from './celebrate.js';
 
 const ROLES = ['label', 'tag', 'item'];
 const PROMPTS = {
@@ -317,6 +318,7 @@ function renderPrice(container) {
     view.appendChild(h('p', { class: 'center mute' }, 'Usually about 5 seconds.'));
     tiers(); settings(); // warm caches in parallel
     let item;
+    celebrate(); // fire-and-forget flourish (server decides if/what)
     try {
       item = await call('item.create', { photos: Object.assign({}, flow.photos) });
     } catch (e) {
