@@ -1,7 +1,7 @@
 // Price tab (camera -> AI price -> countdown -> label) and Review queue (CONTRACT §8, PLAN "Pricing").
 import { call, MOCK } from './api.js';
 import { session, can, on, emit } from './state.js';
-import { h, BigButton, toast, keypad, confirmModal, money, showError, errorMessage, spinner, empty, imageToJpeg } from './ui.js';
+import { h, BigButton, toast, keypad, confirmModal, sheet, money, showError, errorMessage, spinner, empty, imageToJpeg } from './ui.js';
 import { openEditItem, brandDisplay } from './edit-item.js';
 import { celebrate } from './celebrate.js';
 
@@ -170,6 +170,18 @@ function showResult(host, item, opts) {
       get running() { return running; },
     };
   })();
+  // Item photo on the card; tap for a big view (stops the auto-accept so nothing is accepted mid-look).
+  function thumbEl() {
+    if (!item.thumb_url) return null;
+    const big = String(item.thumb_url).replace(/([?&]sz=)w\d+/, '$1w1200');
+    return h('button', { type: 'button', class: 'pr-thumb-btn', 'aria-label': 'See the photo bigger', onClick: () => {
+      cd.stop();
+      const s = sheet(h('div', { class: 'pr-photo-sheet' },
+        h('img', { src: big, alt: 'Item photo' }),
+        BigButton('Close', () => s.close(), { variant: 'secondary' })));
+    } }, h('img', { class: 'pr-thumb', src: item.thumb_url, alt: 'Item photo', loading: 'eager', decoding: 'async' }),
+      h('span', { class: 'pr-thumb-zoom' }, '⤢'));
+  }
   let hintEl = null;
   const hint = () => (hintEl = h('div', { class: 'mute pr-hint' }, 'Accepts by itself when the button fills. Tap Change price to stop it.'));
 
@@ -246,6 +258,7 @@ function showResult(host, item, opts) {
     const t = tierInfo(item);
     root.appendChild(h('p', { class: 'pr-kicker' }, 'Under ' + money((settingsCache && settingsCache.rules && settingsCache.rules.bin_below) || 10) + ': label it and put it in the ' + t.label));
     root.appendChild(h('div', { class: 'pr-card pr-bin' },
+      thumbEl(),
       h('button', { type: 'button', class: 'pr-price-btn', 'aria-label': 'Change price', onClick: () => (cd.running ? cd.interrupt() : openKeypad()) },
         h('span', { class: 'price-huge' }, money(t.price)), h('span', { class: 'pr-bin-word' }, 'BIN')),
       descEl(), editLink(), hint()));
@@ -254,6 +267,7 @@ function showResult(host, item, opts) {
     const retail = Number(item.retail_est) || 0;
     root.appendChild(h('div', { class: 'pr-card' },
       item.premium ? h('div', { class: 'pr-flag' }, '★ Premium table') : null,
+      thumbEl(),
       h('button', { type: 'button', class: 'pr-price-btn', 'aria-label': 'Change price', onClick: () => (cd.running ? cd.interrupt() : openKeypad()) },
         h('span', { class: 'price-huge' }, money(item.ai_price)), h('span', { class: 'pr-edit' }, '✎ change')),
       item.retail_confident && retail > 0 ? h('div', { class: 'pr-was' }, 'Was ' + money(retail) + ' new') : null,
@@ -591,6 +605,10 @@ const css = `
 .pr-actions .pr-ok { background-image: linear-gradient(90deg, rgba(0,0,0,.32) calc(var(--p, 0) * 100%), transparent 0); }
 .pr-ok-num { display: inline-block; min-width: 1.1em; margin-left: 8px; font-variant-numeric: tabular-nums; opacity: .9; }
 .pr-hint { font-size: 15px; margin-top: 10px; }
+.pr-thumb-btn { position: relative; display: block; margin: 0 auto 8px; padding: 0; border: 0; background: none; cursor: zoom-in; }
+.pr-thumb { display: block; height: 132px; max-width: 100%; width: auto; object-fit: contain; border-radius: 12px; border: 2px solid var(--line); background: var(--bg-2); }
+.pr-thumb-zoom { position: absolute; right: 6px; bottom: 6px; background: rgba(0,0,0,.6); color: #fff; border-radius: 8px; padding: 0 6px; font-size: 18px; line-height: 26px; }
+.pr-photo-sheet img { display: block; width: 100%; max-height: 70vh; object-fit: contain; border-radius: 12px; margin-bottom: 12px; background: var(--bg-2); }
 `;
 document.head.appendChild(h('style', { 'data-module': 'price' }, css));
 
