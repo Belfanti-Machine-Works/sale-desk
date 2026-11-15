@@ -403,7 +403,7 @@ export function renderTierSign(tier) {
   el.appendChild(top);
   const qr = div('sd-sign-qr'); fillQr(qr, tier.tier);
   el.appendChild(qr);
-  el.appendChild(div('sd-sign-foot', 'Checkout scans this code · ' + tier.tier));
+  el.appendChild(div('sd-sign-foot', 'Checkout: scan this code for items without a label'));
   return el;
 }
 

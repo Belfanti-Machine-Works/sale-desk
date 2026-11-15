@@ -148,9 +148,11 @@ function showResult(host, item, opts) {
     try {
       const done = await call('item.accept', params);
       emit('item:priced', done);
-      if (done.status === 'binned') {
+      if (done.status === 'binned') { // legacy items from before bin labels
         toast('Into the ' + tierInfo(done).label + ' it goes!', 'ok');
       } else {
+        // Every item gets a label now, bin items included (they also go on their bin's rack).
+        if (done.route === 'bin') toast('Label it, then put it in the ' + tierInfo(done).label + '.', 'ok');
         await labelAfterAccept(done);
       }
       opts.onDone(done);
@@ -166,21 +168,13 @@ function showResult(host, item, opts) {
   const desc = [item.brand, item.title, item.size].filter(Boolean).join(' · ');
   if (isBin) {
     const t = tierInfo(item);
-    root.appendChild(h('p', { class: 'pr-kicker' }, 'Under ' + money((settingsCache && settingsCache.rules && settingsCache.rules.bin_below) || 10) + ': put it in the bin'));
+    root.appendChild(h('p', { class: 'pr-kicker' }, 'Under ' + money((settingsCache && settingsCache.rules && settingsCache.rules.bin_below) || 10) + ': label it and put it in the ' + t.label));
     root.appendChild(h('div', { class: 'pr-card pr-bin' },
       h('button', { type: 'button', class: 'pr-price-btn', 'aria-label': 'Change price', onClick: () => (cd.running ? cd.interrupt() : openKeypad()) },
         h('span', { class: 'price-huge' }, money(t.price)), h('span', { class: 'pr-bin-word' }, 'BIN')),
       h('div', { class: 'pr-desc' }, desc || 'Item'),
       h('div', { class: 'pr-cdrow' }, cd, h('span', { class: 'mute' }, 'Tap the price to change it'))));
-    const countBtn = BigButton('+1 counted', async () => {
-      countBtn.disabled = true;
-      try {
-        const tr = await call('tiers.count', { tier: item.tier, delta: 1 });
-        countBtn.textContent = '✓ Counted (' + tr.counted_in + ' in the bin)';
-      } catch (e) { countBtn.disabled = false; showError(e); }
-    }, { variant: 'secondary', class: 'btn-huge' });
-    root.appendChild(countBtn);
-    root.appendChild(BigButton('Next item ✓', () => commit(null), { class: 'btn-huge' }));
+    root.appendChild(BigButton('Accept ✓', () => commit(null), { class: 'btn-huge' }));
   } else {
     const retail = Number(item.retail_est) || 0;
     root.appendChild(h('div', { class: 'pr-card' },

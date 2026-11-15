@@ -14,7 +14,7 @@ const DEFAULT_RULES = {
   used_pct: [0.25, 0.35], nwt_pct: [0.40, 0.50], pick: 'mid',
   round: [{ lt: 10, to: 1 }, { lt: 50, to: 5 }, { lt: 100000, to: 10 }],
   bin_below: 10, tiers: [{ max: 1.99, tier: 'T1' }, { max: 3.99, tier: 'T3' }, { max: 9.99, tier: 'T5' }],
-  research_at: 25, premium_at: 75, min_price: 1, stage2_mode: 'search',
+  research_at: 10, premium_at: 75, min_price: 1, stage2_mode: 'search',
 };
 const ROLES = { helper: 1, pricer: 2, admin: 3 };
 const HELPER = ['scan', 'checkout', 'sales.list', 'dashboard', 'tiers.list', 'events.list', 'settings.get'];
@@ -442,7 +442,8 @@ const ACTIONS = {
     if (price < rules.bin_below && it.route === 'bin') {
       const t = (rules.tiers.find((x) => price <= x.max) || rules.tiers[rules.tiers.length - 1]).tier;
       const tierRow = db.tiers.find((x) => x.tier === t);
-      Object.assign(it, { status: 'binned', route: 'bin', tier: t, final_price: tierRow ? tierRow.price : price });
+      // Bin items get labels now (status 'priced'); AI price -> the rack's price, a typed price is kept exactly.
+      Object.assign(it, { status: 'priced', route: 'bin', tier: t, final_price: override ? price : (tierRow ? tierRow.price : price) });
     } else {
       Object.assign(it, { status: 'priced', final_price: price, route: it.route === 'bin' ? 'label' : it.route, tier: it.route === 'bin' ? '' : it.tier });
     }
