@@ -1,7 +1,7 @@
 // Price tab (camera -> AI price -> countdown -> label) and Review queue (CONTRACT §8, PLAN "Pricing").
 import { call, MOCK } from './api.js';
 import { session, can, on, emit } from './state.js';
-import { h, BigButton, toast, keypad, Countdown, confirmModal, money, showError, errorMessage, spinner, empty, imageToJpeg } from './ui.js';
+import { h, BigButton, toast, keypad, confirmModal, money, showError, errorMessage, spinner, empty, imageToJpeg } from './ui.js';
 import { openEditItem, brandDisplay } from './edit-item.js';
 import { celebrate } from './celebrate.js';
 
@@ -130,7 +130,48 @@ function showResult(host, item, opts) {
   host.appendChild(root);
 
   const saving = h('p', { class: 'center mute pr-saving', hidden: true }, 'Saving…');
-  const cd = Countdown({ seconds: COUNTDOWN_S, onExpire: () => commit(null), onInterrupt: () => openKeypad() });
+  // Auto-accept timer, shown as the Accept button filling up ("Looks good ✓ 4… 3…"). Driven by
+  // requestAnimationFrame so it is smooth; pauses while the screen is hidden; never restarts by itself.
+  let okBtn = null, okNum = null;
+  const cd = (() => {
+    const total = COUNTDOWN_S * 1000;
+    let running = true, elapsed = 0, last = null, seen = false, raf = 0, iv = 0;
+    function paint() {
+      if (!okBtn) return;
+      okBtn.style.setProperty('--p', Math.min(1, elapsed / total).toFixed(4));
+      okNum.textContent = String(Math.max(1, Math.ceil((total - elapsed) / 1000)));
+    }
+    // Two clocks feed one tick: a steady 100 ms interval (always runs, even where animation frames are
+    // throttled, e.g. iOS Low Power Mode) and requestAnimationFrame for a smooth fill when available.
+    function tick(now) {
+      if (!running) return;
+      if (root.isConnected) seen = true;
+      else if (seen) { stop(); return; } // screen was replaced
+      if (root.isConnected && !document.hidden) {
+        if (last !== null) elapsed += Math.min(now - last, 250);
+        last = now;
+      } else last = null;
+      paint();
+      if (elapsed >= total) { stop(); commit(null); }
+    }
+    function rafLoop(now) { tick(now); if (running) raf = requestAnimationFrame(rafLoop); }
+    function stop() {
+      if (!running) return;
+      running = false;
+      cancelAnimationFrame(raf);
+      clearInterval(iv);
+      if (okBtn) { okBtn.style.setProperty('--p', '0'); okNum.textContent = ''; okBtn.classList.add('pr-ok-stopped'); }
+      if (hintEl) hintEl.textContent = 'Timer stopped. Tap a button when you\'re ready.';
+    }
+    return {
+      start() { iv = setInterval(() => tick(performance.now()), 100); raf = requestAnimationFrame(rafLoop); },
+      stop,
+      interrupt() { stop(); openKeypad(); },
+      get running() { return running; },
+    };
+  })();
+  let hintEl = null;
+  const hint = () => (hintEl = h('div', { class: 'mute pr-hint' }, 'Accepts by itself when the button fills. Tap Change price to stop it.'));
 
   async function openKeypad() {
     if (committed) return;
@@ -207,8 +248,7 @@ function showResult(host, item, opts) {
     root.appendChild(h('div', { class: 'pr-card pr-bin' },
       h('button', { type: 'button', class: 'pr-price-btn', 'aria-label': 'Change price', onClick: () => (cd.running ? cd.interrupt() : openKeypad()) },
         h('span', { class: 'price-huge' }, money(t.price)), h('span', { class: 'pr-bin-word' }, 'BIN')),
-      descEl(), editLink(),
-      h('div', { class: 'pr-cdrow' }, cd, h('span', { class: 'mute' }, 'Tap the price to change it'))));
+      descEl(), editLink(), hint()));
     root.appendChild(actionBar('Accept ✓'));
   } else {
     const retail = Number(item.retail_est) || 0;
@@ -219,15 +259,18 @@ function showResult(host, item, opts) {
       item.retail_confident && retail > 0 ? h('div', { class: 'pr-was' }, 'Was ' + money(retail) + ' new') : null,
       descEl(), editLink(),
       item.nwt ? h('div', { class: 'pill pill-labeled' }, 'New with tags') : null,
-      h('div', { class: 'pr-cdrow' }, cd, h('span', { class: 'mute' }, 'Tap the price to change it'))));
+      hint()));
     if (opts.mode === 'review') root.appendChild(compsBlock(item));
     root.appendChild(actionBar('Looks good ✓'));
   }
   // Thumb zone: bar pinned just above the tab bar. Change price on the left, Accept on the right (owner's call).
   function actionBar(okLabel) {
+    okBtn = BigButton(okLabel, () => commit(null), { class: 'btn-huge pr-ok' });
+    okNum = h('span', { class: 'pr-ok-num' }, String(COUNTDOWN_S));
+    okBtn.appendChild(okNum);
     return h('div', { class: 'pr-actions' },
       BigButton('✎ Change price', () => openKeypad(), { variant: 'secondary', class: 'btn-huge pr-change' }),
-      BigButton(okLabel, () => commit(null), { class: 'btn-huge pr-ok' }));
+      okBtn);
   }
   root.appendChild(saving);
   const foot = h('div', { class: 'pr-foot' });
@@ -239,6 +282,7 @@ function showResult(host, item, opts) {
   } }, 'Not for sale? Pull it'));
   foot.appendChild(h('span', { class: 'mute' }, item.id));
   root.appendChild(foot);
+  cd.start();
   return { destroy() { cd.stop(); committed = true; } };
 }
 
@@ -456,7 +500,21 @@ function renderReview(container, ctx) {
         h('div', { class: 'price' }, looking ? '…' : money(it.ai_price)));
     })));
   }
+  let opening = false;
   async function open(it) {
+    // One open at a time: a second tap while the first is loading used to re-open the item and restart
+    // its countdown. Show "Opening…" immediately so the tap clearly registered.
+    if (opening || current) return;
+    if (it.status !== 'researching') {
+      opening = true;
+      listEl.innerHTML = '';
+      listEl.appendChild(spinner('Opening ' + it.id + '…'));
+      try { await openItem(it); } finally { opening = false; }
+      return;
+    }
+    return openItem(it);
+  }
+  async function openItem(it) {
     if (it.status === 'researching') {
       const again = await confirmModal('Still looking up sold prices for this one. Try the lookup again now?', 'Look it up again');
       if (again) {
@@ -529,6 +587,10 @@ const css = `
 .pr-result { padding-bottom: 120px; } /* room so the fixed bar never covers the footer links */
 .pr-actions .btn { width: 100%; margin: 0; min-height: 96px; font-size: 24px; line-height: 1.15; padding: 8px 10px; }
 .pr-actions .pr-change { border-width: 3px; }
+/* The Accept button IS the countdown: a darker fill sweeps left->right over 5 s, number counts down. */
+.pr-actions .pr-ok { background-image: linear-gradient(90deg, rgba(0,0,0,.32) calc(var(--p, 0) * 100%), transparent 0); }
+.pr-ok-num { display: inline-block; min-width: 1.1em; margin-left: 8px; font-variant-numeric: tabular-nums; opacity: .9; }
+.pr-hint { font-size: 15px; margin-top: 10px; }
 `;
 document.head.appendChild(h('style', { 'data-module': 'price' }, css));
 
