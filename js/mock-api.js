@@ -584,7 +584,20 @@ const ACTIONS = {
     log(user, 'item.pull', id);
     return it;
   },
-  'item.delete'({ id }, user) {
+  'item.delete'({ id, ids }, user) {
+    if (Array.isArray(ids)) { // mass delete: mirrors backend sdItemDeleteMany_
+      const list = [...new Set(ids.map((x) => String(x || '').trim()).filter(Boolean))];
+      if (!list.length) fail('INVALID', 'No items to delete.');
+      if (list.length > 500) fail('INVALID', 'Too many items at once (500 max).');
+      const deleted = [], sold = [], not_found = [];
+      for (const x of list) {
+        const it = db.items.find((i) => i.id === x);
+        if (!it) not_found.push(x); else if (it.status === 'sold') sold.push(x); else deleted.push(x);
+      }
+      db.items = db.items.filter((i) => !deleted.includes(i.id));
+      if (deleted.length) log(user, 'item.deleteMany', '', { ids: deleted });
+      return { count: deleted.length, deleted, sold, not_found };
+    }
     getItem(id);
     db.items = db.items.filter((i) => i.id !== id);
     log(user, 'item.delete', id);

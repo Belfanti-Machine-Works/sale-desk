@@ -118,6 +118,19 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .li .t1 { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .li .t2 { color: var(--ink-2); font-size: var(--fs-small); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .li .price { font-weight: 800; font-size: 22px; flex: 0 0 auto; }
+/* Inventory Select mode (mass delete, 2026-11-15) */
+.inv-selbtn { font-size: var(--fs-body); font-weight: 700; text-decoration: none; }
+.inv-tick { width: 28px; height: 28px; flex: 0 0 28px; border-radius: 50%; border: 2px solid var(--line); background: var(--bg); display: flex; align-items: center; justify-content: center; }
+.li.picked { background: var(--bad-soft); }
+.li.picked .inv-tick { background: var(--bad); border-color: var(--bad); }
+.li.picked .inv-tick::after { content: '\2713'; color: #fff; font-weight: 800; font-size: 17px; line-height: 1; }
+.li.nopick { opacity: 0.45; }
+.tab-inventory.inv-selecting { padding-bottom: calc(var(--tab-h) + var(--safe-bottom) + 170px); }
+.inv-selbar { position: fixed; left: 0; right: 0; bottom: calc(var(--tab-h) + var(--safe-bottom)); z-index: 19; background: var(--bg); border-top: 1px solid var(--line); box-shadow: 0 -4px 14px rgba(0,0,0,0.12); padding: 10px calc(var(--pad) + var(--safe-right)) 10px calc(var(--pad) + var(--safe-left)); }
+.inv-selbar[hidden] { display: none; }
+.inv-selcount { font-weight: 700; text-align: center; margin-bottom: 8px; }
+.inv-selbtns { display: flex; gap: 10px; }
+.inv-selbtns .btn { flex: 1 1 0; min-width: 0; }
 .pill { display: inline-block; font-size: 14px; font-weight: 700; padding: 2px 8px; border-radius: 10px; background: var(--bg-2); color: var(--ink-2); }
 .pill-review, .pill-researching { background: var(--warn-soft); color: var(--warn); }
 .pill-priced { background: var(--accent-soft); color: var(--accent); }

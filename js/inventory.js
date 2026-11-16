@@ -37,18 +37,98 @@ function renderInventory(container, ctx) {
   container.classList.add('tab-inventory');
   loadTiers();
   const state ={ q: '', status: '', offset: 0, items: [], total: 0, loading: false, seq: 0 };
+  // Mass delete (2026-11-15): Select mode ticks rows; sold items can't be ticked (the backend refuses them too).
+  const sel = { on: false, ids: new Set(), busy: false };
+  const canBulk = can('item.delete');
   const statsEl = h('div', { class: 'inv-stats' });
   const search = h('input', { type: 'search', placeholder: 'Search brand, item, or S-00012', 'aria-label': 'Search inventory', autocomplete: 'off', autocorrect: 'off', enterkeyhint: 'search' });
   const chips = h('div', { class: 'chips', role: 'tablist' });
   const listEl = h('div', { class: 'list' });
   const moreEl = h('div');
-  container.append(h('div', { class: 'topbar' }, h('h1', null, 'Inventory')), statsEl, h('label', { class: 'field' }, search), chips, listEl, moreEl);
+  const selBtn = canBulk ? h('button', { type: 'button', class: 'linkbtn inv-selbtn', onClick: () => setSelect(!sel.on) }, 'Select') : null;
+  const selBar = h('div', { class: 'inv-selbar', hidden: true });
+  container.append(h('div', { class: 'topbar' }, h('h1', null, 'Inventory'), selBtn), statsEl, h('label', { class: 'field' }, search), chips, listEl, moreEl, selBar);
+
+  const selectable = (it) => it.status !== 'sold';
+  function setSelect(on) {
+    sel.on = on; sel.ids.clear();
+    container.classList.toggle('inv-selecting', on);
+    if (selBtn) selBtn.textContent = on ? 'Done' : 'Select';
+    draw(); paintBar();
+  }
+  function toggle(it, el) {
+    if (!selectable(it) || sel.busy) return;
+    if (sel.ids.has(it.id)) sel.ids.delete(it.id); else sel.ids.add(it.id);
+    el.classList.toggle('picked', sel.ids.has(it.id));
+    el.setAttribute('aria-checked', String(sel.ids.has(it.id)));
+    paintBar();
+  }
+  function paintBar() {
+    selBar.hidden = !sel.on;
+    if (!sel.on) return;
+    selBar.innerHTML = '';
+    const n = sel.ids.size;
+    const allLoaded = state.items.length >= state.total;
+    const pickable = state.items.filter(selectable).length;
+    const everything = allLoaded && n > 0 && n === pickable;
+    const allBtn = BigButton(everything ? 'Clear' : 'Select all' + (state.total ? ' ' + state.total : ''), () => (everything ? clearAll() : selectAll(allBtn)), { variant: 'secondary' });
+    const delBtn = BigButton(n ? 'Delete ' + n : 'Delete', () => bulkDelete(), { variant: 'danger', disabled: !n || sel.busy });
+    allBtn.disabled = sel.busy;
+    selBar.append(h('div', { class: 'inv-selcount' }, n ? n + ' selected' : 'Tap items to select them'), h('div', { class: 'inv-selbtns' }, allBtn, delBtn));
+  }
+  function clearAll() { sel.ids.clear(); draw(); paintBar(); }
+  // "Select all" means everything matching the current filter + search, not just the 30 on screen.
+  async function selectAll(btn) {
+    btn.disabled = true; btn.textContent = 'Loading…';
+    const my = state.seq;
+    try {
+      while (state.items.length < state.total) {
+        const params = { offset: state.items.length, limit: 200 };
+        if (state.q) params.q = state.q;
+        if (state.status) params.status = state.status;
+        const res = await call('inventory.list', params);
+        if (my !== state.seq || !sel.on) return;
+        if (!(res.items || []).length) break;
+        state.items = state.items.concat(res.items);
+        state.total = res.total || state.total;
+      }
+      state.offset = state.items.length;
+      state.items.filter(selectable).forEach((it) => sel.ids.add(it.id));
+      const sold = state.items.length - sel.ids.size;
+      if (sold > 0) toast(sold + ' sold item' + (sold === 1 ? '' : 's') + ' can\'t be deleted, so ' + (sold === 1 ? 'it stays' : 'they stay') + ' unticked.');
+    } catch (e) { showError(e); }
+    draw(); paintBar();
+  }
+  async function bulkDelete() {
+    const ids = [...sel.ids];
+    if (!ids.length || sel.busy) return;
+    const what = ids.length === 1 ? ids[0] : ids.length + ' items';
+    if (!(await confirmModal('Delete ' + what + ' forever? This cannot be undone.', 'Delete ' + (ids.length === 1 ? 'it' : 'all ' + ids.length)))) return;
+    sel.busy = true; paintBar();
+    let done = 0, skippedSold = 0;
+    try {
+      for (let i = 0; i < ids.length; i += 200) { // backend takes up to 500; smaller chunks keep each call quick
+        const r = await call('item.delete', { ids: ids.slice(i, i + 200) });
+        done += r.count || 0; skippedSold += (r.sold || []).length;
+        if (ids.length > 200) toast('Deleted ' + done + ' of ' + ids.length + '…');
+      }
+      toast('Deleted ' + done + ' item' + (done === 1 ? '' : 's') + (skippedSold ? ' (' + skippedSold + ' sold, kept)' : ''), 'ok');
+    } catch (e) {
+      showError(e);
+      if (done) toast('Deleted ' + done + ' before the error. Refreshing the list.', 'error');
+    } finally {
+      sel.busy = false;
+      setSelect(false);
+      loadStats();
+      load(true);
+    }
+  }
 
   function drawChips() {
     chips.innerHTML = '';
     for (const f of FILTERS) {
       chips.appendChild(h('button', { type: 'button', class: 'chip' + (state.status === f.status ? ' on' : ''), role: 'tab', 'aria-selected': String(state.status === f.status),
-        onClick: () => { state.status = f.status; drawChips(); load(true); } }, f.label));
+        onClick: () => { state.status = f.status; sel.ids.clear(); drawChips(); load(true); } }, f.label));
     }
   }
   async function loadStats() {
@@ -94,13 +174,27 @@ function renderInventory(container, ctx) {
     moreEl.innerHTML = '';
     if (!state.items.length) {
       listEl.appendChild(empty(state.q ? 'Nothing matches "' + state.q + '".' : 'No items here yet.'));
+      paintBar();
       return;
     }
     for (const it of state.items) listEl.appendChild(row(it));
     moreEl.appendChild(h('p', { class: 'mute center' }, 'Showing ' + state.items.length + ' of ' + state.total));
     if (state.items.length < state.total) moreEl.appendChild(BigButton('Show more', () => load(false), { variant: 'secondary' }));
+    paintBar();
   }
   function row(it) {
+    if (sel.on) {
+      const ok = selectable(it), picked = sel.ids.has(it.id);
+      const el = h('button', { type: 'button', class: 'li' + (picked ? ' picked' : '') + (ok ? '' : ' nopick'), role: 'checkbox', 'aria-checked': String(picked), 'aria-disabled': String(!ok),
+        onClick: () => (ok ? toggle(it, el) : toast('Sold items can\'t be deleted.')) },
+        h('span', { class: 'inv-tick', 'aria-hidden': 'true' }),
+        h('img', { class: 'thumb', src: it.thumb_url || 'icon.svg', alt: '', loading: 'lazy' }),
+        h('div', { class: 'main' },
+          h('div', { class: 't1' }, descOf(it)),
+          h('div', { class: 't2' }, pill(it.status), ' ', it.size ? 'Size ' + it.size + ' · ' : '', it.id)),
+        h('div', { class: 'price' }, it.status === 'binned' ? binLabel(it.tier) : money(priceOf(it))));
+      return el;
+    }
     return h('button', { type: 'button', class: 'li', onClick: () => openDetail(it) },
       h('img', { class: 'thumb', src: it.thumb_url || 'icon.svg', alt: '', loading: 'lazy' }),
       h('div', { class: 'main' },
@@ -251,9 +345,9 @@ function renderInventory(container, ctx) {
   let debounce = null;
   search.addEventListener('input', () => {
     clearTimeout(debounce);
-    debounce = setTimeout(() => { state.q = search.value.trim(); load(true); }, 350);
+    debounce = setTimeout(() => { state.q = search.value.trim(); sel.ids.clear(); load(true); }, 350);
   });
-  search.addEventListener('keydown', (e) => { if (e.key === 'Enter') { clearTimeout(debounce); state.q = search.value.trim(); search.blur(); load(true); } });
+  search.addEventListener('keydown', (e) => { if (e.key === 'Enter') { clearTimeout(debounce); state.q = search.value.trim(); sel.ids.clear(); search.blur(); load(true); } });
   drawChips();
   loadStats();
   load(true);
