@@ -55,11 +55,12 @@ const CSS = `
 .sd-label.sd-3x2{width:76.2mm;height:50.8mm;min-width:76.2mm;display:flex;gap:2.5mm;padding:2.5mm 3mm}
 .sd-3x2 .sd-f-txt{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:space-between}
 .sd-3x2 .sd-l-price{height:auto;line-height:.95;letter-spacing:-.03em;white-space:nowrap}
-.sd-3x2 .sd-f-low{display:flex;gap:2mm;align-items:flex-end;min-height:0}
-.sd-3x2 .sd-f-thumb{flex:none;width:18mm;height:18mm;object-fit:cover;border-radius:1mm;filter:grayscale(1) contrast(1.25)}
-.sd-3x2 .sd-f-info{flex:1;min-width:0}
-.sd-3x2 .sd-l-was{font-size:3mm;margin:0 0 .6mm}
-.sd-3x2 .sd-l-desc{font-size:3mm;line-height:1.15;max-height:10.4mm;-webkit-line-clamp:3;margin:0}
+.sd-3x2 .sd-f-info{min-width:0}
+.sd-3x2 .sd-l-was{font-size:3.1mm;margin:0 0 .5mm;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sd-3x2 .sd-l-comps{font-weight:700}
+.sd-3x2 .sd-l-desc{font-size:3.1mm;line-height:1.15;margin:0}
+.sd-3x2 .sd-f-thumb{display:block;width:15mm;height:15mm;object-fit:cover;border-radius:1mm;margin-bottom:1.2mm;filter:grayscale(1) contrast(1.25)}
+.sd-3x2 .sd-f-qr.has-thumb .sd-l-qr,.sd-3x2 .sd-f-qr.has-thumb .sd-l-qr svg{width:21mm;height:21mm}
 .sd-3x2 .sd-f-qr{flex:none;width:25mm;display:flex;flex-direction:column;align-items:center;justify-content:center}
 .sd-3x2 .sd-f-qr .sd-l-qr{width:25mm;height:25mm}
 .sd-3x2 .sd-f-qr .sd-l-qr svg{width:25mm;height:25mm}
@@ -101,6 +102,14 @@ function wasText(item) {
   const r = Number(item.retail_est);
   if (!truthy(item.retail_confident) || !(r > 0) || r <= labelPrice(item)) return '';
   return 'Was ' + money(Math.round(r)) + ' new';
+}
+/** "Resells $34–$53 online" from the item's comps (comp_low/high are market values; asking counted at 75%). */
+function compsText(item) {
+  const lo = Number(item.comp_low) || 0, hi = Number(item.comp_high) || 0;
+  if (!(lo > 0) && !(hi > 0)) return '';
+  const a = Math.round(lo || hi), b = Math.round(hi || lo);
+  if (b <= labelPrice(item)) return ''; // only useful as an anchor when it's above our price
+  return 'Resells ' + (a === b ? money(a) : money(a) + '–' + money(b)) + ' online';
 }
 function descText(item) {
   return [item.brand_display || item.brand, item.title, item.size].map(s => String(s ?? '').trim()).filter(Boolean).join(' · ');
@@ -156,21 +165,28 @@ function renderLabel3x2(item) {
   const p = div('sd-l-price', price);
   p.style.fontSize = Math.min(18, +(40 / (0.66 * price.length)).toFixed(1)) + MM; // fits the ~42 mm column
   txt.appendChild(p);
-  // Lower row: small item photo (grayscale; thermal prints it dithered) + "was" + description.
-  const low = div('sd-f-low');
+  // Under the price, full column width: "Was $X new", "Resells $A–$B online" (comps), description.
+  const info = div('sd-f-info');
+  if (was) info.appendChild(div('sd-l-was', was));
+  const comps = compsText(item);
+  if (comps) info.appendChild(div('sd-l-was sd-l-comps', comps));
+  const desc = descText(item);
+  if (desc) {
+    const d = div('sd-l-desc', desc);
+    const lines = 4 - (was ? 1 : 0) - (comps ? 1 : 0);
+    d.style.webkitLineClamp = String(lines);
+    d.style.maxHeight = (lines * 3.6) + MM;
+    info.appendChild(d);
+  }
+  txt.appendChild(info);
+  // Right column: small item photo (grayscale; thermal prints it dithered) above the QR + id.
+  const qrCol = div('sd-f-qr' + (item.thumb_url ? ' has-thumb' : ''));
   if (item.thumb_url) {
     const img = document.createElement('img');
     img.className = 'sd-f-thumb'; img.alt = ''; img.src = item.thumb_url;
-    img.onerror = () => img.remove();
-    low.appendChild(img);
+    img.onerror = () => { img.remove(); qrCol.classList.remove('has-thumb'); };
+    qrCol.appendChild(img);
   }
-  const info = div('sd-f-info');
-  if (was) info.appendChild(div('sd-l-was', was));
-  const desc = descText(item);
-  if (desc) info.appendChild(div('sd-l-desc', desc));
-  low.appendChild(info);
-  txt.appendChild(low);
-  const qrCol = div('sd-f-qr');
   const qr = div('sd-l-qr'); fillQr(qr, id);
   qrCol.append(qr, div('sd-l-id', id));
   el.append(txt, qrCol);
