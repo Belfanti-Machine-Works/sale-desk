@@ -50,20 +50,20 @@ const CSS = `
 .sd-report td.num,.sd-report th.num{text-align:right;white-space:nowrap}
 .sd-report img{width:36pt;height:36pt;object-fit:cover}
 
-/* 3 x 2 in (76.2 x 50.8 mm) flag label for the Rollo: folds across the middle around a tag loop.
-   Front strip (top 1 in): QR left; price, "was", description, id right. Back strip: price + id upside-down. */
-.sd-label.sd-3x2{width:76.2mm;height:50.8mm;min-width:76.2mm}
-.sd-3x2 .sd-f{position:absolute;left:2.5mm;right:2.5mm;top:1.8mm;height:22mm;display:flex;gap:2.5mm;align-items:center}
-.sd-3x2 .sd-f .sd-l-qr{width:20mm;height:20mm;flex:none}
-.sd-3x2 .sd-f .sd-l-qr svg{width:20mm;height:20mm}
-.sd-3x2 .sd-f-txt{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center}
-.sd-3x2 .sd-l-price{height:auto;line-height:1}
-.sd-3x2 .sd-l-was{font-size:2.8mm;margin-top:.4mm}
-.sd-3x2 .sd-l-desc{font-size:2.8mm;max-height:6.6mm;margin-top:.4mm}
-.sd-3x2 .sd-l-id{font-size:3.2mm;margin-top:.6mm}
-.sd-3x2 .sd-l-fold{top:25.4mm;left:2.5mm;right:2.5mm}
-.sd-3x2 .sd-l-back{top:26.6mm;height:22mm;left:2.5mm;right:2.5mm}
-.sd-3x2 .sd-l-back .sd-l-id{font-size:3.6mm;margin-top:1.2mm}
+/* 3 x 2 in (76.2 x 50.8 mm) FLAT one-sided label for the Rollo (owner, 2026-11-15): no fold, nothing upside down.
+   Left: big price, "was", description (2 lines). Right: QR with the item id under it. */
+.sd-label.sd-3x2{width:76.2mm;height:50.8mm;min-width:76.2mm;display:flex;gap:2.5mm;padding:2.5mm 3mm}
+.sd-3x2 .sd-f-txt{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:space-between}
+.sd-3x2 .sd-l-price{height:auto;line-height:.95;letter-spacing:-.03em;white-space:nowrap}
+.sd-3x2 .sd-f-low{display:flex;gap:2mm;align-items:flex-end;min-height:0}
+.sd-3x2 .sd-f-thumb{flex:none;width:18mm;height:18mm;object-fit:cover;border-radius:1mm;filter:grayscale(1) contrast(1.25)}
+.sd-3x2 .sd-f-info{flex:1;min-width:0}
+.sd-3x2 .sd-l-was{font-size:3mm;margin:0 0 .6mm}
+.sd-3x2 .sd-l-desc{font-size:3mm;line-height:1.15;max-height:10.4mm;-webkit-line-clamp:3;margin:0}
+.sd-3x2 .sd-f-qr{flex:none;width:25mm;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.sd-3x2 .sd-f-qr .sd-l-qr{width:25mm;height:25mm}
+.sd-3x2 .sd-f-qr .sd-l-qr svg{width:25mm;height:25mm}
+.sd-3x2 .sd-l-id{font-size:3.6mm;margin-top:1mm;text-align:center}
 
 #sd-print-root{display:none}
 @media print{
@@ -147,27 +147,33 @@ export const LABEL_SIZES = {
 let currentSize = '3x2';
 export function setLabelSize(size) { if (LABEL_SIZES[size]) currentSize = size; return currentSize; }
 
-/** 3 x 2 in flag label (see CSS above). */
+/** 3 x 2 in flat one-sided label (see CSS above): big price top-left, photo + details under it, QR + id right. */
 function renderLabel3x2(item) {
   const price = priceText(item), was = wasText(item), id = String(item.id || '');
   const el = div('sd-label sd-3x2');
   el.dataset.id = id;
-  const f = div('sd-f');
-  const qr = div('sd-l-qr'); fillQr(qr, id);
   const txt = div('sd-f-txt');
-  const p = div('sd-l-price', price); p.style.fontSize = Math.min(10, +(46 / (0.62 * price.length)).toFixed(1)) + MM;
+  const p = div('sd-l-price', price);
+  p.style.fontSize = Math.min(18, +(40 / (0.66 * price.length)).toFixed(1)) + MM; // fits the ~42 mm column
   txt.appendChild(p);
-  if (was) txt.appendChild(div('sd-l-was', was));
+  // Lower row: small item photo (grayscale; thermal prints it dithered) + "was" + description.
+  const low = div('sd-f-low');
+  if (item.thumb_url) {
+    const img = document.createElement('img');
+    img.className = 'sd-f-thumb'; img.alt = ''; img.src = item.thumb_url;
+    img.onerror = () => img.remove();
+    low.appendChild(img);
+  }
+  const info = div('sd-f-info');
+  if (was) info.appendChild(div('sd-l-was', was));
   const desc = descText(item);
-  if (desc) txt.appendChild(div('sd-l-desc', desc));
-  txt.appendChild(div('sd-l-id', id));
-  f.append(qr, txt);
-  el.appendChild(f);
-  el.appendChild(div('sd-l-fold'));
-  const back = div('sd-l-back');
-  const p2 = div('sd-l-price', price); p2.style.fontSize = Math.min(13, +(66 / (0.7 * price.length)).toFixed(1)) + MM;
-  back.append(p2, div('sd-l-id', id));
-  el.appendChild(back);
+  if (desc) info.appendChild(div('sd-l-desc', desc));
+  low.appendChild(info);
+  txt.appendChild(low);
+  const qrCol = div('sd-f-qr');
+  const qr = div('sd-l-qr'); fillQr(qr, id);
+  qrCol.append(qr, div('sd-l-id', id));
+  el.append(txt, qrCol);
   return el;
 }
 
@@ -260,11 +266,14 @@ export function printPages(nodes, { pageCss = '@page{size:letter;margin:12mm}', 
     pendingPrint = finish;
     window.addEventListener('afterprint', finish);
     timer = setTimeout(finish, 5 * 60 * 1000); // safety net if a browser never fires afterprint
-    // let the SVG/images lay out before the print snapshot (setTimeout, not rAF: rAF stalls in background tabs)
-    setTimeout(() => {
+    // Let the SVG lay out and label photos download (max 3 s) before the print snapshot
+    // (setTimeout, not rAF: rAF stalls in background tabs).
+    const imgs = [...root.querySelectorAll('img')].filter((im) => !im.complete);
+    const loaded = Promise.all(imgs.map((im) => new Promise((ok) => { im.addEventListener('load', ok, { once: true }); im.addEventListener('error', ok, { once: true }); })));
+    Promise.race([loaded, new Promise((ok) => setTimeout(ok, 3000))]).then(() => setTimeout(() => {
       if (done) return;
       try { window.print(); } catch (_) { finish(); }
-    }, 80);
+    }, 80));
   });
 }
 
