@@ -82,7 +82,7 @@ async function labelsModule() {
 export async function printNow(items) {
   const m = await labelsModule();
   if (!m) return false;
-  await m.printLabels(items);
+  await m.printLabels(items, { size: (await settings()).label_size });
   await call('item.markLabeled', { ids: items.map((i) => i.id) });
   return true;
 }
@@ -106,7 +106,7 @@ async function printQueued(btn) {
   if (!m) { toast("Label printing isn't set up yet. The labels will wait here.", 'error'); return; }
   if (btn) btn.disabled = true;
   try {
-    await m.printLabels(q);
+    await m.printLabels(q, { size: (await settings()).label_size });
     const ok = await confirmModal('Did all ' + q.length + ' label' + (q.length === 1 ? '' : 's') + ' print OK?', 'Yes, all printed');
     if (ok) {
       await call('item.markLabeled', { ids: q.map((i) => i.id) });

@@ -484,7 +484,21 @@ function renderSettings(container) {
         : 'Labels wait in a list on the Price tab. Tap “Print N labels” to print them all at once (fewer print screens).';
     };
     paint();
-    return card('Label printing', seg, hint);
+    // Label size: 3 x 2 in (Rollo thermal via the Pi print server) or 62 x 100 mm (Brother QL).
+    let size = s.label_size === '62x100' ? '62x100' : '3x2';
+    const sizeSeg = h('div', { class: 'seg', role: 'radiogroup', style: { marginTop: '14px' } });
+    const paintSize = () => {
+      sizeSeg.innerHTML = '';
+      for (const [v, label] of [['3x2', '3 × 2 in (Rollo)'], ['62x100', '62 × 100 mm (Brother)']]) {
+        sizeSeg.appendChild(h('button', { type: 'button', class: size === v ? 'on' : '', role: 'radio', 'aria-checked': String(size === v), onClick: async () => {
+          if (size === v) return;
+          const prev = size; size = v; paintSize();
+          if (!(await save({ label_size: v }, null, 'Label size: ' + label))) { size = prev; paintSize(); }
+        } }, label));
+      }
+    };
+    paintSize();
+    return card('Label printing', seg, hint, h('p', { style: { margin: '14px 0 0', fontWeight: '700' } }, 'Label size'), sizeSeg);
   }
 
   // ---- PINs

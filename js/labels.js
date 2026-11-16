@@ -50,6 +50,21 @@ const CSS = `
 .sd-report td.num,.sd-report th.num{text-align:right;white-space:nowrap}
 .sd-report img{width:36pt;height:36pt;object-fit:cover}
 
+/* 3 x 2 in (76.2 x 50.8 mm) flag label for the Rollo: folds across the middle around a tag loop.
+   Front strip (top 1 in): QR left; price, "was", description, id right. Back strip: price + id upside-down. */
+.sd-label.sd-3x2{width:76.2mm;height:50.8mm;min-width:76.2mm}
+.sd-3x2 .sd-f{position:absolute;left:2.5mm;right:2.5mm;top:1.8mm;height:22mm;display:flex;gap:2.5mm;align-items:center}
+.sd-3x2 .sd-f .sd-l-qr{width:20mm;height:20mm;flex:none}
+.sd-3x2 .sd-f .sd-l-qr svg{width:20mm;height:20mm}
+.sd-3x2 .sd-f-txt{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center}
+.sd-3x2 .sd-l-price{height:auto;line-height:1}
+.sd-3x2 .sd-l-was{font-size:2.8mm;margin-top:.4mm}
+.sd-3x2 .sd-l-desc{font-size:2.8mm;max-height:6.6mm;margin-top:.4mm}
+.sd-3x2 .sd-l-id{font-size:3.2mm;margin-top:.6mm}
+.sd-3x2 .sd-l-fold{top:25.4mm;left:2.5mm;right:2.5mm}
+.sd-3x2 .sd-l-back{top:26.6mm;height:22mm;left:2.5mm;right:2.5mm}
+.sd-3x2 .sd-l-back .sd-l-id{font-size:3.6mm;margin-top:1.2mm}
+
 #sd-print-root{display:none}
 @media print{
   html.sd-printing body>*:not(#sd-print-root){display:none!important}
@@ -60,6 +75,7 @@ const CSS = `
   #sd-print-root .sd-page-fixed{break-inside:avoid;page-break-inside:avoid;overflow:hidden}
   #sd-print-root .sd-page:last-child{break-after:auto;page-break-after:auto}
   #sd-print-root .sd-page-label{width:62mm;height:100mm}
+  #sd-print-root .sd-page-label.sd-page-3x2{width:76.2mm;height:50.8mm}
 }
 `;
 
@@ -121,10 +137,45 @@ function fillQr(el, text) {
   ensureLib('qrcode').then(() => { el.innerHTML = qrSvg(text); }).catch(() => { el.textContent = ''; });
 }
 
+// ---------------------------------------------------------------- label sizes
+// Settings `label_size`: '3x2' (3 x 2 in, Rollo thermal via the Pi print server; the default) or
+// '62x100' (62 x 100 mm, Brother QL). printLabels() remembers the size it was last given.
+export const LABEL_SIZES = {
+  '3x2': { page: '@page{size:3in 2in;margin:0}', cls: 'sd-page-3x2', name: '3 × 2 in (Rollo)' },
+  '62x100': { page: '@page{size:62mm 100mm;margin:0}', cls: '', name: '62 × 100 mm (Brother)' },
+};
+let currentSize = '3x2';
+export function setLabelSize(size) { if (LABEL_SIZES[size]) currentSize = size; return currentSize; }
+
+/** 3 x 2 in flag label (see CSS above). */
+function renderLabel3x2(item) {
+  const price = priceText(item), was = wasText(item), id = String(item.id || '');
+  const el = div('sd-label sd-3x2');
+  el.dataset.id = id;
+  const f = div('sd-f');
+  const qr = div('sd-l-qr'); fillQr(qr, id);
+  const txt = div('sd-f-txt');
+  const p = div('sd-l-price', price); p.style.fontSize = Math.min(10, +(46 / (0.62 * price.length)).toFixed(1)) + MM;
+  txt.appendChild(p);
+  if (was) txt.appendChild(div('sd-l-was', was));
+  const desc = descText(item);
+  if (desc) txt.appendChild(div('sd-l-desc', desc));
+  txt.appendChild(div('sd-l-id', id));
+  f.append(qr, txt);
+  el.appendChild(f);
+  el.appendChild(div('sd-l-fold'));
+  const back = div('sd-l-back');
+  const p2 = div('sd-l-price', price); p2.style.fontSize = Math.min(13, +(66 / (0.7 * price.length)).toFixed(1)) + MM;
+  back.append(p2, div('sd-l-id', id));
+  el.appendChild(back);
+  return el;
+}
+
 // ---------------------------------------------------------------- label (DOM)
-/** 62 x 100 mm label element. Works on screen (preview) and in print. */
-export function renderLabel(item) {
+/** Label element in the chosen size (default: the last size printLabels used). Screen preview + print. */
+export function renderLabel(item, size = currentSize) {
   injectCss();
+  if (size === '3x2') return renderLabel3x2(item);
   const price = priceText(item), was = wasText(item), id = String(item.id || '');
   const el = document.createElement('div');
   el.className = 'sd-label';
@@ -217,14 +268,16 @@ export function printPages(nodes, { pageCss = '@page{size:letter;margin:12mm}', 
   });
 }
 
-/** One label per page at 62 x 100 mm. Resolves after the print dialog closes. */
-export async function printLabels(items) {
+/** One label per page in the chosen size (opts.size, else the last size used). Resolves after the dialog closes. */
+export async function printLabels(items, opts = {}) {
   const list = [].concat(items || []).filter(Boolean);
   if (!list.length) return;
+  const size = setLabelSize(opts.size || currentSize);
+  const spec = LABEL_SIZES[size];
   await ensureLib('qrcode');
-  return printPages(list.map(renderLabel), {
-    pageCss: '@page{size:62mm 100mm;margin:0}',
-    pageClass: 'sd-page-fixed sd-page-label',
+  return printPages(list.map((it) => renderLabel(it, size)), {
+    pageCss: spec.page,
+    pageClass: 'sd-page-fixed sd-page-label' + (spec.cls ? ' ' + spec.cls : ''),
   });
 }
 

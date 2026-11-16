@@ -22,7 +22,7 @@ const DEFAULT_RULES = {
 const ROLES = { helper: 1, pricer: 2, admin: 3 };
 const HELPER = ['scan', 'checkout', 'sales.list', 'dashboard', 'tiers.list', 'events.list', 'settings.get'];
 const PRICER_EXTRA = ['voidSale', 'item.', 'review.', 'inventory.', 'tiers.count', 'promo.', 'events.save'];
-const PUBLIC_SETTINGS = ['venmo_handle', 'zelle_handle', 'venmo_qr_url', 'label_mode', 'users'];
+const PUBLIC_SETTINGS = ['venmo_handle', 'zelle_handle', 'venmo_qr_url', 'label_mode', 'label_size', 'users'];
 const ADMIN_ONLY = ['settings.save', 'setup.', 'reports.'];
 const OPEN_STATUSES = ['new', 'researching', 'review', 'priced', 'labeled'];
 
@@ -862,7 +862,8 @@ const ACTIONS = {
     }
     if (p.rules) { db.settings.rules = Object.assign({}, db.settings.rules, p.rules); delete p.rules; }
     if (p.label_mode !== undefined && !['each', 'batch'].includes(p.label_mode)) fail('INVALID', 'label_mode must be each or batch');
-    for (const k of ['venmo_handle', 'zelle_handle', 'label_mode', 'users']) if (p[k] !== undefined) db.settings[k] = p[k];
+    if (p.label_size !== undefined && !['3x2', '62x100'].includes(p.label_size)) fail('INVALID', 'label_size must be 3x2 or 62x100');
+    for (const k of ['venmo_handle', 'zelle_handle', 'label_mode', 'label_size', 'users']) if (p[k] !== undefined) db.settings[k] = p[k];
     log(user, 'settings.save', '', { keys: Object.keys(partial || {}).filter((k) => k !== 'token') });
     return Object.assign({}, db.settings);
   },
