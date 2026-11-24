@@ -224,7 +224,10 @@ function mount(container) {
   photoInput.addEventListener('change', onPhoto);
   const photoBtn = el('label', { class: 'ck-photo-btn', for: photoInput.id }, 'Scan with photo');
   const devBox = IS_MOCK ? devField() : null;
-  const scanPanel = el('section', { class: 'ck-scan' }, reader, scanBtnHolder, scanMsg, photoBtn, photoInput, devBox);
+  // Hear the "in the cart" beep without scanning (also wakes up the phone's sound after a restart).
+  const testBeep = el('button', { type: 'button', class: 'linkbtn', style: 'display:block;margin:10px auto 0;font-size:17px',
+    onclick: () => { unlockAudio(); beep(true); } }, '🔊 Test the beep');
+  const scanPanel = el('section', { class: 'ck-scan' }, reader, scanBtnHolder, scanMsg, photoBtn, photoInput, testBeep, devBox);
 
   const scanner = createScanner(reader, code => handleCode(code));
 

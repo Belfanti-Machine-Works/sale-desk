@@ -1,8 +1,9 @@
 // Sale Desk service worker: caches the app shell only. Never touches API calls
 // (those are cross-origin POSTs to Apps Script and are passed straight through).
-// index.html is network-first so updates land; other shell files are
-// stale-while-revalidate. Bump VERSION on each publish to drop old caches.
-const VERSION = 'sale-desk-20261123-222103';
+// App files (same origin) are network-first so an update lands on the very next open (2026-11-24: phones kept
+// running the old copy); the cache is the offline fallback. CDN libraries (pinned versions) are
+// stale-while-revalidate. publish.ps1 bumps VERSION on each publish to drop old caches.
+const VERSION = 'sale-desk-20261123-222422';
 const SHELL = [
   './', 'index.html', 'app.css', 'manifest.json', 'icon.svg',
   'js/main.js', 'js/api.js', 'js/state.js', 'js/ui.js', 'js/price.js', 'js/inventory.js', 'js/edit-item.js', 'js/celebrate.js',
@@ -19,7 +20,9 @@ const CDN = [
 self.addEventListener('install', (e) => {
   e.waitUntil((async () => {
     const c = await caches.open(VERSION);
-    await Promise.all(SHELL.concat(OPTIONAL, CDN).map((u) => c.add(u).catch(() => null)));
+    // cache: 'reload' skips the browser's HTTP cache (GitHub Pages sends max-age=600) so the new version is stored
+    await Promise.all(SHELL.concat(OPTIONAL).map((u) => c.add(new Request(u, { cache: 'reload' })).catch(() => null))
+      .concat(CDN.map((u) => c.add(u).catch(() => null))));
     await self.skipWaiting();
   })());
 });
@@ -44,6 +47,7 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(networkFirst(req));
     return;
   }
+  if (sameOrigin) { e.respondWith(networkFirstFile(req)); return; }
   e.respondWith(staleWhileRevalidate(req, e));
 });
 
@@ -56,6 +60,24 @@ async function networkFirst(req) {
   } catch (err) {
     return (await c.match('index.html')) || (await c.match('./')) || Response.error();
   }
+}
+
+// Same-origin app files: ask the server (a quick 304 when unchanged); fall back to the cache when offline or slow.
+async function networkFirstFile(req) {
+  const c = await caches.open(VERSION);
+  const key = req.url.split('?')[0];
+  const net = fetch(req, { cache: 'no-cache' }).then((res) => {
+    if (res && res.ok) c.put(key, res.clone());
+    return res;
+  });
+  const slow = new Promise((ok) => setTimeout(ok, 4000, null));
+  try {
+    const res = await Promise.race([net, slow]);
+    if (res && res.ok) return res;
+  } catch (err) { /* offline */ }
+  const hit = await c.match(key);
+  if (hit) return hit;
+  try { return await net; } catch (err) { return Response.error(); }
 }
 
 async function staleWhileRevalidate(req, e) {

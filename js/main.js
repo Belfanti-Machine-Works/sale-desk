@@ -18,6 +18,7 @@ const ORDER = ['price', 'review', 'checkout', 'inventory', 'dashboard', 'promo',
 const BAR_SLOTS = 4;
 const app = document.getElementById('app');
 const query = new URLSearchParams(location.search);
+const APP_VERSION = '20261123-222422'; // publish.ps1 stamps the publish time here (shown on the More tab)
 
 let allTabs = null;
 let containers = {};
@@ -154,7 +155,8 @@ const MORE_TAB = {
     el.appendChild(h('div', { class: 'card', style: { marginTop: '20px' } },
       h('p', null, 'Signed in as ', h('b', null, session.name), ' (' + roleName + ')'),
       BigButton('Switch person / sign out', () => { location.hash = ''; logout(); }, { variant: 'secondary' })));
-    el.appendChild(h('p', { class: 'mute center' }, 'Sale Desk' + (MOCK ? ' · demo data' : '')));
+    const v = APP_VERSION.replace(/^\d{4}(\d{2})(\d{2})-(\d{2})(\d{2}).*/, (m, mo, d, hh, mi) => mo + '/' + d + ' ' + hh + ':' + mi);
+    el.appendChild(h('p', { class: 'mute center' }, 'Sale Desk · version ' + v + (MOCK ? ' · demo data' : '')));
   },
 };
 
@@ -291,7 +293,31 @@ function registerSW() {
   if (!('serviceWorker' in navigator)) return;
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
   if (local && query.get('sw') !== '1') return; // keep dev reloads fresh
-  navigator.serviceWorker.register('sw.js').catch((e) => console.info('SW not registered', e && e.message));
+  navigator.serviceWorker.register('sw.js').then((reg) => {
+    // Home Screen apps resume without reloading, so check for a new version every time the app comes back.
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) { shownAt = Date.now(); reg.update().catch(() => {}); }
+    });
+  }).catch((e) => console.info('SW not registered', e && e.message));
+  // A new version took over: reload right away if nobody has tapped since the app opened or came back
+  // (nothing is lost), otherwise offer a tap-to-update banner.
+  let hadController = !!navigator.serviceWorker.controller, reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController) { hadController = true; return; } // first install, not an update
+    if (reloading) return;
+    if (lastTap < shownAt && Date.now() - shownAt < 30000) { reloading = true; location.reload(); return; }
+    showUpdateBanner();
+  });
+}
+let shownAt = Date.now(), lastTap = 0;
+document.addEventListener('pointerdown', () => { lastTap = Date.now(); }, { capture: true, passive: true });
+function showUpdateBanner() {
+  if (document.getElementById('sd-update')) return;
+  const b = h('button', { id: 'sd-update', type: 'button', onClick: () => location.reload(),
+    style: { position: 'fixed', left: '12px', right: '12px', top: 'calc(env(safe-area-inset-top, 0px) + 8px)', zIndex: '10000',
+      padding: '14px', borderRadius: '12px', border: 'none', background: '#1a5fd0', color: '#fff', fontSize: '18px', fontWeight: '700' } },
+    'New version ready. Tap to update.');
+  document.body.appendChild(b);
 }
 registerSW();
 renderApp();
