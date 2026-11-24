@@ -498,7 +498,14 @@ function renderSettings(container) {
       }
     };
     paintSize();
-    return card('Label printing', seg, hint, h('p', { style: { margin: '14px 0 0', fontWeight: '700' } }, 'Label size'), sizeSeg);
+    // Raspberry Pi print server status: when it's online, labels print on the Rollo with no print screen.
+    const piLine = h('p', { class: 'mute', style: { margin: '0 0 12px' } }, 'Label printer: checking…');
+    call('print.status', {}).then((r) => {
+      piLine.textContent = r && r.pi_online
+        ? '🟢 Label printer (Pi) is online. Labels print by themselves, no print screen.'
+        : '⚪ Label printer (Pi) is offline. Labels use this phone’s print screen (Safari only).';
+    }).catch(() => { piLine.textContent = ''; });
+    return card('Label printing', piLine, seg, hint, h('p', { style: { margin: '14px 0 0', fontWeight: '700' } }, 'Label size'), sizeSeg);
   }
 
   // ---- PINs

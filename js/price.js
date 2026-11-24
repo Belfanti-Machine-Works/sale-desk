@@ -78,8 +78,24 @@ async function labelsModule() {
     return null;
   }
 }
-// printNow(items) -> true if printLabels ran and items were marked labeled; false if not available.
+// Home Screen web apps on iOS ignore window.print(), so there the phone's print screen never opens.
+const STANDALONE = navigator.standalone === true || !!(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+// Labels go to the Raspberry Pi print server when it's online (it prints them itself, no print screen).
+// -> the backend reply {queued, skipped} when the Pi took them; null if the Pi is offline / not available.
+async function sendToPi(items) {
+  try {
+    const r = await call('print.queue', { ids: items.map((i) => i.id), size: (await settings()).label_size });
+    return r && r.pi_online ? r : null;
+  } catch (e) {
+    console.info('Pi printer not available:', e && e.message);
+    return null;
+  }
+}
+// printNow(items) -> true if the labels went to the Pi (it marks them labeled once printed) or the phone's
+// print screen ran (marked labeled here); false if neither is possible (caller keeps them in the print list).
 export async function printNow(items) {
+  if (await sendToPi(items)) return true;
+  if (STANDALONE) return false;
   const m = await labelsModule();
   if (!m) return false;
   await m.printLabels(items, { size: (await settings()).label_size });
@@ -100,8 +116,26 @@ async function labelAfterAccept(item) {
   toast('Priced ' + money(item.final_price) + '. ' + n + ' label' + (n === 1 ? '' : 's') + ' waiting to print.', 'ok');
 }
 async function printQueued(btn) {
+  const all = printQueue();
+  if (!all.length) return;
+  if (btn) btn.disabled = true;
+  try {
+    const batch = all.slice(0, 100);
+    const r = await sendToPi(batch);
+    if (r) {
+      saveQueue(printQueue().filter((x) => !batch.some((y) => y.id === x.id)));
+      const left = all.length - batch.length;
+      toast(r.queued + ' label' + (r.queued === 1 ? '' : 's') + ' sent to the label printer' + (left ? '. Tap Print again for the other ' + left + '.' : '.'), 'ok');
+      return;
+    }
+    if (STANDALONE) {
+      toast('The label printer is offline. Check that the Pi and the Rollo are plugged in and on, then tap Print again.', 'error');
+      return;
+    }
+  } finally {
+    if (btn && btn.isConnected) btn.disabled = false;
+  }
   const q = printQueue();
-  if (!q.length) return;
   const m = await labelsModule();
   if (!m) { toast("Label printing isn't set up yet. The labels will wait here.", 'error'); return; }
   if (btn) btn.disabled = true;

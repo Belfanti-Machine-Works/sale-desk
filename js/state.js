@@ -18,7 +18,7 @@ export let session = load();
 // ---- role table (CONTRACT §3). admin ⊃ pricer ⊃ helper.
 const HELPER = ['scan', 'checkout', 'sales.list', 'dashboard', 'tiers.list', 'events.list', 'settings.get', 'fun.egg'];
 // events.save is not in the §3 table; the promo agent edits events, so it sits with promo.* at pricer+.
-const PRICER = ['voidSale', 'item.*', 'review.*', 'inventory.*', 'tiers.count', 'promo.*', 'events.save'];
+const PRICER = ['voidSale', 'item.*', 'review.*', 'inventory.*', 'tiers.count', 'promo.*', 'events.save', 'print.queue', 'print.status'];
 const ADMIN = ['settings.*', 'setup.*', 'reports.*']; // item.delete is pricer+ (covered by item.*)
 const PUBLIC = ['login', 'setup.init'];
 export const ROLE_ACTIONS = {

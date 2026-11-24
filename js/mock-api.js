@@ -21,7 +21,7 @@ const DEFAULT_RULES = {
 };
 const ROLES = { helper: 1, pricer: 2, admin: 3 };
 const HELPER = ['scan', 'checkout', 'sales.list', 'dashboard', 'tiers.list', 'events.list', 'settings.get'];
-const PRICER_EXTRA = ['voidSale', 'item.', 'review.', 'inventory.', 'tiers.count', 'promo.', 'events.save'];
+const PRICER_EXTRA = ['print.', 'voidSale', 'item.', 'review.', 'inventory.', 'tiers.count', 'promo.', 'events.save'];
 const PUBLIC_SETTINGS = ['venmo_handle', 'zelle_handle', 'venmo_qr_url', 'label_mode', 'label_size', 'users'];
 const ADMIN_ONLY = ['settings.save', 'setup.', 'reports.'];
 const OPEN_STATUSES = ['new', 'researching', 'review', 'priced', 'labeled'];
@@ -530,6 +530,23 @@ const ACTIONS = {
     Object.assign(it, { price_source: override ? 'override' : 'ai', premium: it.final_price >= rules.premium_at, priced_by: user.name, priced_at: now(), review_lock_by: '', review_lock_until: '' });
     if (override) log(user, 'override', id, { ai_price: it.ai_price, final_price: it.final_price });
     return it;
+  },
+  // Pi print server stand-in: online when sessionStorage sd_mock_pi = '1' (labels "print" at once).
+  'print.queue'({ ids }) {
+    let on = false;
+    try { on = sessionStorage.getItem('sd_mock_pi') === '1'; } catch (e) { /* ignore */ }
+    if (!on) return { queued: 0, pi_online: false };
+    let queued = 0; const skipped = [];
+    for (const id of ids || []) {
+      const it = db.items.find((i) => i.id === id);
+      if (it && (it.status === 'priced' || it.status === 'labeled')) { it.status = 'labeled'; queued++; } else skipped.push(id);
+    }
+    return { queued, pi_online: true, skipped };
+  },
+  'print.status'() {
+    let on = false;
+    try { on = sessionStorage.getItem('sd_mock_pi') === '1'; } catch (e) { /* ignore */ }
+    return { pi_online: on, pi_seen_at: on ? now() : '', pending: 0 };
   },
   'item.markLabeled'({ ids }) {
     let count = 0;
