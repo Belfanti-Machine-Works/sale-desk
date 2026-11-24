@@ -283,7 +283,9 @@ function mount(container) {
     if (!code) return;
     const existing = cart.lines.find(l => l.type === 'item' && l.id === code);
     if (existing) { beep(false); toast(code + ' is already in the cart.', 'info'); return; }
-    beep('tick'); // heard right away: code read, looking it up ("ding" follows once it's in the cart)
+    // Beep the instant the code is read (owner, 2026-11-24: the lookup takes 3-4 s, too late for a signal).
+    // The line is in the cart right away as "Looking up…"; a problem found by the lookup buzzes and removes it.
+    beep(true);
     const ph ={ key: newKey(), type: 'item', id: code, qty: 1, desc: 'Looking up ' + code + '…', price: 0, list_price: 0, pending: true };
     cart.lines.push(ph);
     paint();
@@ -293,7 +295,7 @@ function mount(container) {
       if (i < 0) return; // cart was cleared meanwhile
       if (res.kind === 'tier' && res.tier) {
         cart.lines.splice(i, 1);
-        addTier(res.tier, 1, true);
+        addTier(res.tier, 1, true, true); // already beeped on read
       } else {
         const it = res.item || {};
         if (cart.lines.some(l => l !== ph && l.type === 'item' && l.id === it.id)) {
@@ -304,7 +306,6 @@ function mount(container) {
           const p = Number(it.final_price) || Number(it.ai_price) || 0;
           cart.lines[i] = { key: ph.key, type: 'item', id: it.id || code, qty: 1,
             desc: [it.brand, it.title, it.size].filter(Boolean).join(' · ') || it.id || code, list_price: p, price: p };
-          beep(true);
         }
       }
     } catch (err) {
@@ -320,13 +321,13 @@ function mount(container) {
     paint();
   }
 
-  function addTier(t, delta = 1, fromScan = false) {
+  function addTier(t, delta = 1, fromScan = false, silent = false) {
     const line = cart.lines.find(l => l.type === 'tier' && l.tier === t.tier && !l.edited);
     const price = Number(t.price) || 0;
     if (line) line.qty = Math.max(0, (Number(line.qty) || 0) + delta);
     else if (delta > 0) cart.lines.push({ key: newKey(), type: 'tier', tier: t.tier, qty: delta, desc: tierName(t), list_price: price, price });
     cart.lines = cart.lines.filter(l => !(l.type === 'tier' && l.qty <= 0));
-    if (fromScan || delta > 0) beep(true);
+    if (!silent && (fromScan || delta > 0)) beep(true);
     persist();
   }
 
