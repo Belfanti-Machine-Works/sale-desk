@@ -50,21 +50,20 @@ const CSS = `
 .sd-report td.num,.sd-report th.num{text-align:right;white-space:nowrap}
 .sd-report img{width:36pt;height:36pt;object-fit:cover}
 
-/* 3 x 2 in (76.2 x 50.8 mm) FLAT one-sided label for the Rollo (owner, 2026-11-15): no fold, nothing upside down.
-   Left: big price, "was", description (2 lines). Right: QR with the item id under it. */
-.sd-label.sd-3x2{width:76.2mm;height:50.8mm;min-width:76.2mm;display:flex;gap:2.5mm;padding:2.5mm 3mm}
-.sd-3x2 .sd-f-txt{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:space-between}
-.sd-3x2 .sd-l-price{height:auto;line-height:.95;letter-spacing:-.03em;white-space:nowrap}
-.sd-3x2 .sd-f-info{min-width:0}
-.sd-3x2 .sd-l-was{font-size:3.1mm;margin:0 0 .5mm;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 3 x 2 in (76.2 x 50.8 mm) FLAT one-sided label for the Rollo (owner, 2026-11-24 layout; same as pi/sale_desk_printer.py):
+   big price top-left, 29 mm photo top-right, 13 mm QR bottom-right with the id above it,
+   "Was" / comps / description along the bottom-left. No photo: bigger price and text. */
+.sd-label.sd-3x2{width:76.2mm;height:50.8mm;min-width:76.2mm}
+.sd-3x2 .sd-l-price{position:absolute;left:3mm;top:2.5mm;height:auto;line-height:.95;letter-spacing:-.03em;white-space:nowrap}
+.sd-3x2 .sd-f-thumb{position:absolute;right:3mm;top:2.5mm;width:29mm;height:29mm;object-fit:cover;filter:grayscale(1) contrast(1.25)}
+.sd-3x2 .sd-f-info{position:absolute;left:3mm;right:18.5mm;bottom:2.5mm}
+.sd-3x2 .sd-l-was{font-size:3.1mm;line-height:1.15;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sd-3x2 .sd-l-comps{font-weight:700}
 .sd-3x2 .sd-l-desc{font-size:3.1mm;line-height:1.15;margin:0}
-.sd-3x2 .sd-f-thumb{display:block;width:15mm;height:15mm;object-fit:cover;border-radius:1mm;margin-bottom:1.2mm;filter:grayscale(1) contrast(1.25)}
-.sd-3x2 .sd-f-qr.has-thumb .sd-l-qr,.sd-3x2 .sd-f-qr.has-thumb .sd-l-qr svg{width:21mm;height:21mm}
-.sd-3x2 .sd-f-qr{flex:none;width:25mm;display:flex;flex-direction:column;align-items:center;justify-content:center}
-.sd-3x2 .sd-f-qr .sd-l-qr{width:25mm;height:25mm}
-.sd-3x2 .sd-f-qr .sd-l-qr svg{width:25mm;height:25mm}
-.sd-3x2 .sd-l-id{font-size:3.6mm;margin-top:1mm;text-align:center}
+.sd-3x2.no-thumb .sd-l-was,.sd-3x2.no-thumb .sd-l-desc{font-size:3.6mm}
+.sd-3x2 .sd-l-qr{position:absolute;right:3mm;bottom:2.5mm;width:13mm;height:13mm}
+.sd-3x2 .sd-l-qr svg{width:13mm;height:13mm}
+.sd-3x2 .sd-l-id{position:absolute;right:3mm;bottom:15.7mm;font-size:3.2mm;line-height:1;text-align:right;white-space:nowrap}
 
 #sd-print-root{display:none}
 @media print{
@@ -156,16 +155,22 @@ export const LABEL_SIZES = {
 let currentSize = '3x2';
 export function setLabelSize(size) { if (LABEL_SIZES[size]) currentSize = size; return currentSize; }
 
-/** 3 x 2 in flat one-sided label (see CSS above): big price top-left, photo + details under it, QR + id right. */
+/** 3 x 2 in flat one-sided label (see CSS above; mirrors render_3x2 in pi/sale_desk_printer.py). */
 function renderLabel3x2(item) {
   const price = priceText(item), was = wasText(item), id = String(item.id || '');
-  const el = div('sd-label sd-3x2');
+  const el = div('sd-label sd-3x2' + (item.thumb_url ? '' : ' no-thumb'));
   el.dataset.id = id;
-  const txt = div('sd-f-txt');
   const p = div('sd-l-price', price);
-  p.style.fontSize = Math.min(18, +(40 / (0.66 * price.length)).toFixed(1)) + MM; // fits the ~42 mm column
-  txt.appendChild(p);
-  // Under the price, full column width: "Was $X new", "Resells $A–$B online" (comps), description.
+  // beside the photo (~41 mm) or, without one, beside the QR row (~52 mm) and bigger
+  p.style.fontSize = (item.thumb_url ? Math.min(18, +(40 / (0.66 * price.length)).toFixed(1))
+    : Math.min(24, +(52 / (0.66 * price.length)).toFixed(1))) + MM;
+  el.appendChild(p);
+  if (item.thumb_url) {
+    const img = document.createElement('img');
+    img.className = 'sd-f-thumb'; img.alt = ''; img.src = item.thumb_url;
+    img.onerror = () => { img.remove(); el.classList.add('no-thumb'); };
+    el.appendChild(img);
+  }
   const info = div('sd-f-info');
   if (was) info.appendChild(div('sd-l-was', was));
   const comps = compsText(item);
@@ -174,22 +179,13 @@ function renderLabel3x2(item) {
   if (desc) {
     const d = div('sd-l-desc', desc);
     const lines = 4 - (was ? 1 : 0) - (comps ? 1 : 0);
+    d.style.display = '-webkit-box'; d.style.webkitBoxOrient = 'vertical'; d.style.overflow = 'hidden';
     d.style.webkitLineClamp = String(lines);
-    d.style.maxHeight = (lines * 3.6) + MM;
     info.appendChild(d);
   }
-  txt.appendChild(info);
-  // Right column: small item photo (grayscale; thermal prints it dithered) above the QR + id.
-  const qrCol = div('sd-f-qr' + (item.thumb_url ? ' has-thumb' : ''));
-  if (item.thumb_url) {
-    const img = document.createElement('img');
-    img.className = 'sd-f-thumb'; img.alt = ''; img.src = item.thumb_url;
-    img.onerror = () => { img.remove(); qrCol.classList.remove('has-thumb'); };
-    qrCol.appendChild(img);
-  }
+  el.appendChild(info);
   const qr = div('sd-l-qr'); fillQr(qr, id);
-  qrCol.append(qr, div('sd-l-id', id));
-  el.append(txt, qrCol);
+  el.append(qr, div('sd-l-id', id));
   return el;
 }
 
