@@ -218,7 +218,7 @@ function mount(container) {
 
   // ---------- persistent scanner panel (kept across cart repaints)
   const reader = el('div', { class: 'ck-reader' });
-  const scanMsg = el('p', { class: 'ck-scan-msg' }, 'Point the camera at the QR code on the label.');
+  const scanMsg = el('p', { class: 'ck-scan-msg' }, 'Hold the phone 6–10 inches from the label and fit the QR code in the box.');
   const scanBtnHolder = el('div');
   const photoInput = el('input', { type: 'file', accept: 'image/*', capture: 'environment', id: 'ck-photo-' + Date.now() });
   photoInput.addEventListener('change', onPhoto);
@@ -243,7 +243,7 @@ function mount(container) {
     try {
       await scanner.start();
       save(SCAN_WANT_KEY, sessionStorage, true);
-      scanMsg.textContent = 'Point the camera at the QR code on the label.';
+      scanMsg.textContent = 'Hold the phone 6–10 inches from the label and fit the QR code in the box.';
     } catch (e) {
       reader.classList.remove('on');
       scanMsg.textContent = 'Camera not available. Use "Scan with photo" or the price buttons.';

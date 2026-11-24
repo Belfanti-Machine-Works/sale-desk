@@ -143,18 +143,30 @@ export function createScanner(el, onCode, { dedupeMs = 1500 } = {}) {
       const H = await ensureLib('Html5Qrcode');
       if (!inst) {
         const fmts = window.Html5QrcodeSupportedFormats;
-        inst = new H(el.id, fmts ? { formatsToSupport: [fmts.QR_CODE], verbose: false } : false);
+        inst = new H(el.id, fmts
+          ? { formatsToSupport: [fmts.QR_CODE], verbose: false, experimentalFeatures: { useBarCodeDetectorIfSupported: true } }
+          : false);
       }
-      await inst.start(
-        { facingMode: 'environment' },
-        {
-          fps: 10,
-          qrbox: (w, h) => { const s = Math.max(120, Math.floor(Math.min(w, h) * 0.7)); return { width: s, height: s }; },
-        },
-        onDecode,
-        () => {}
-      );
+      // Small labels (13 mm QR, 2026-11-24) were slow to read: the default camera feed is ~640x480, so the code
+      // was only ~40 px wide. Ask for HD, scan faster, then zoom ~2x so the phone can stay far enough away to
+      // focus (newer iPhones can't focus closer than ~15-20 cm).
+      const cfg = {
+        fps: 15,
+        qrbox: (w, h) => { const s = Math.max(160, Math.floor(Math.min(w, h) * 0.75)); return { width: s, height: s }; },
+        videoConstraints: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+      };
+      try {
+        await inst.start({ facingMode: 'environment' }, cfg, onDecode, () => {});
+      } catch (e) { // camera refused HD: plain settings
+        delete cfg.videoConstraints;
+        await inst.start({ facingMode: 'environment' }, cfg, onDecode, () => {});
+      }
       running = true;
+      try { await inst.applyVideoConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (_) { /* not offered */ }
+      try {
+        const z = inst.getRunningTrackCameraCapabilities().zoomFeature();
+        if (z.isSupported()) await z.apply(Math.min(z.max(), Math.max(z.min(), 2)));
+      } catch (_) { /* no zoom on this phone/browser */ }
     })();
     try { await starting; } finally { starting = null; }
   }
