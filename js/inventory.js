@@ -436,6 +436,8 @@ function renderSettings(container) {
   function paymentsCard(s) {
     const venmo = h('input', { type: 'text', value: s.venmo_handle || '', placeholder: '@your-venmo', autocapitalize: 'off', autocorrect: 'off' });
     const zelle = h('input', { type: 'text', value: s.zelle_handle || '', placeholder: 'phone or email', autocapitalize: 'off', autocorrect: 'off' });
+    const apple = h('input', { type: 'tel', value: s.apple_cash_handle || '', placeholder: 'phone number', autocapitalize: 'off', autocorrect: 'off' });
+    const cashApp = h('input', { type: 'text', value: s.cash_app_handle || '', placeholder: '$cashtag', autocapitalize: 'off', autocorrect: 'off' });
     const qrImg = h('img', { class: 'set-qr', alt: 'Venmo QR code', hidden: !s.venmo_qr_url, src: s.venmo_qr_url || null });
     const qrNone = h('p', { class: 'mute', hidden: !!s.venmo_qr_url }, 'No Venmo QR picture yet.');
     const qrInput = h('input', { type: 'file', accept: 'image/*', class: 'hidden', id: 'set-qr-file' });
@@ -454,9 +456,16 @@ function renderSettings(container) {
         if (out) { qrImg.src = out.venmo_qr_url || img.dataUrl; qrImg.hidden = false; qrNone.hidden = true; removeBtn.hidden = false; }
       } catch (e) { showError(e); }
     });
-    const saveBtn = BigButton('Save payment info', () => save({ venmo_handle: venmo.value.trim(), zelle_handle: zelle.value.trim() }, saveBtn, 'Payment info saved'));
+    const saveBtn = BigButton('Save payment info', () => save({
+      venmo_handle: venmo.value.trim().replace(/^@/, ''), zelle_handle: zelle.value.trim(),
+      apple_cash_handle: apple.value.trim(), cash_app_handle: cashApp.value.trim().replace(/^\$/, ''),
+    }, saveBtn, 'Payment info saved'));
     return card('Payments',
-      field('Venmo username', venmo), field('Zelle / Apple Cash', zelle, 'Shown to buyers at checkout.'),
+      h('p', { class: 'mute' }, 'Shown to buyers at checkout. Leave a box empty to hide that button.'),
+      field('Venmo username', venmo, 'Checkout makes a QR with the amount filled in.'),
+      field('Zelle (phone or email)', zelle),
+      field('Apple Cash (phone number)', apple),
+      field('Cash App $cashtag', cashApp, 'Checkout makes a QR with the amount filled in.'),
       saveBtn,
       h('h3', { style: { marginTop: '18px' } }, 'Venmo QR picture'),
       h('p', { class: 'mute' }, 'In Venmo: Me → the QR icon → screenshot it. Then upload the screenshot here.'),

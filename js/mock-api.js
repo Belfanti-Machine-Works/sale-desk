@@ -22,7 +22,8 @@ const DEFAULT_RULES = {
 const ROLES = { helper: 1, pricer: 2, admin: 3 };
 const HELPER = ['scan', 'checkout', 'sales.list', 'dashboard', 'tiers.list', 'events.list', 'settings.get'];
 const PRICER_EXTRA = ['print.', 'voidSale', 'item.', 'review.', 'inventory.', 'tiers.count', 'promo.', 'events.save'];
-const PUBLIC_SETTINGS = ['venmo_handle', 'zelle_handle', 'venmo_qr_url', 'label_mode', 'label_size', 'users'];
+const PUBLIC_SETTINGS = ['venmo_handle', 'zelle_handle', 'apple_cash_handle', 'cash_app_handle', 'venmo_qr_url', 'label_mode', 'label_size', 'users'];
+const PAY_METHODS = ['cash', 'venmo', 'zelle', 'apple_cash', 'cash_app', 'zelle_apple'];
 const ADMIN_ONLY = ['settings.save', 'setup.', 'reports.'];
 const OPEN_STATUSES = ['new', 'researching', 'review', 'priced', 'labeled'];
 
@@ -240,7 +241,7 @@ function seed({ fresh = false } = {}) {
     v: 5, seq: items.length, saleSeq: 0, createCount: 0,
     pins: fresh ? {} : { admin: '1111', pricer: '2222', helper: '3333' },
     hasKey: !fresh,
-    settings: { venmo_handle: '@Sale-Desk-Demo', zelle_handle: 'demo@example.com', venmo_qr_file_id: '', venmo_qr_url: '', rules, label_mode: 'batch', users: fresh ? [] : PEOPLE.slice() },
+    settings: { venmo_handle: '@Sale-Desk-Demo', zelle_handle: 'demo@example.com', apple_cash_handle: '555-0100', cash_app_handle: 'SaleDeskDemo', venmo_qr_file_id: '', venmo_qr_url: '', rules, label_mode: 'batch', users: fresh ? [] : PEOPLE.slice() },
     items: fresh ? [] : items, tiers, events: fresh ? [] : events, sales: [], log: [],
   };
   if (!fresh) seedSales(db);
@@ -694,9 +695,10 @@ const ACTIONS = {
     if (it.status === 'pulled') fail('NOT_FOUND', 'Pulled from sale');
     return { kind: 'item', item: it };
   },
-  checkout({ event_id, lines, cart_discount_pct, custom_total, method, tendered }, user) {
+  checkout({ event_id, lines, cart_discount_pct, custom_total, method, tendered, payments }, user) {
     if (!Array.isArray(lines) || !lines.length) fail('INVALID', 'Cart is empty');
-    if (!['cash', 'venmo', 'zelle_apple'].includes(method)) fail('INVALID', 'Bad payment method');
+    const pays = Array.isArray(payments) && payments.length ? payments : [{ method, tendered }];
+    for (const x of pays) if (!PAY_METHODS.includes(x.method)) fail('INVALID', 'Bad payment method');
     const ev = currentEvent(event_id);
     const itemIds = lines.filter((l) => l.type === 'item').map((l) => l.id);
     if (new Set(itemIds).size !== itemIds.length) fail('INVALID', 'Same item twice');
@@ -717,17 +719,21 @@ const ACTIONS = {
     const pct = pctOf(cart_discount_pct);
     let total = r2((subtotal - mdAmount) * (1 - pct));
     if (custom_total !== undefined && custom_total !== null && custom_total !== '') total = r2(custom_total);
-    let change = '';
-    if (method === 'cash') {
-      const tnd = tendered === undefined || tendered === null || tendered === '' ? total : Number(tendered);
-      if (tnd < total) fail('INVALID', 'Not enough cash');
-      change = r2(tnd - total);
-      tendered = tnd;
+    if (pays.length === 1 && (pays[0].amount === undefined || pays[0].amount === null)) pays[0] = Object.assign({}, pays[0], { amount: total });
+    if (Math.round(pays.reduce((a, x) => a + Number(x.amount), 0) * 100) !== Math.round(total * 100)) fail('INVALID', 'The payments do not add up to the total');
+    let change = 0;
+    for (const x of pays) {
+      if (x.method !== 'cash' || x.tendered === undefined || x.tendered === null || x.tendered === '') continue;
+      if (Number(x.tendered) < Number(x.amount)) fail('INVALID', 'Not enough cash');
+      change = r2(change + Number(x.tendered) - Number(x.amount));
     }
+    method = pays.length === 1 ? pays[0].method : 'split';
+    tendered = r2(total + change);
+    const paymentsOut = pays.map((x) => Object.assign({ method: x.method, amount: r2(x.amount) }, x.method === 'cash' && x.tendered != null && x.tendered !== '' ? { tendered: r2(x.tendered) } : {}));
     const sale = {
       sale_id: 'X-' + pad(++db.saleSeq, 6), time: now(), cashier: user.name, event_id: ev ? ev.event_id : '',
       lines: clone(lines), subtotal, cart_discount_pct: Number(cart_discount_pct) || 0, custom_total: custom_total ?? '',
-      markdown_applied: mdAmount, total, method, tendered: method === 'cash' ? tendered : '', change, voided: false,
+      markdown_applied: mdAmount, total, method, tendered, change, voided: false, payments: paymentsOut,
     };
     const preTotal = lineTotals.reduce((a, b) => a + b, 0) || 1;
     lines.forEach((l, i) => {
@@ -767,11 +773,11 @@ const ACTIONS = {
   dashboard({ event_id, date }) {
     const ymd = (iso) => { const d = new Date(iso); return d.getFullYear() + '-' + pad(d.getMonth() + 1, 2) + '-' + pad(d.getDate(), 2); };
     const sales = db.sales.filter((s) => !s.voided && (!event_id || s.event_id === event_id) && (!date || ymd(s.time) === date));
-    const by = { cash: 0, venmo: 0, zelle_apple: 0 };
+    const by = { cash: 0, venmo: 0, zelle: 0, apple_cash: 0, cash_app: 0 };
     const byCashier = {}, tierQty = {};
     let total = 0, itemsSold = 0;
     for (const s of sales) {
-      by[s.method] = r2((by[s.method] || 0) + s.total);
+      for (const x of (s.payments && s.payments.length ? s.payments : [{ method: s.method, amount: s.total }])) by[x.method] = r2((by[x.method] || 0) + Number(x.amount));
       total += s.total;
       byCashier[s.cashier] = r2((byCashier[s.cashier] || 0) + s.total);
       for (const l of s.lines) {
@@ -880,7 +886,7 @@ const ACTIONS = {
     if (p.rules) { db.settings.rules = Object.assign({}, db.settings.rules, p.rules); delete p.rules; }
     if (p.label_mode !== undefined && !['each', 'batch'].includes(p.label_mode)) fail('INVALID', 'label_mode must be each or batch');
     if (p.label_size !== undefined && !['3x2', '62x100'].includes(p.label_size)) fail('INVALID', 'label_size must be 3x2 or 62x100');
-    for (const k of ['venmo_handle', 'zelle_handle', 'label_mode', 'label_size', 'users']) if (p[k] !== undefined) db.settings[k] = p[k];
+    for (const k of ['venmo_handle', 'zelle_handle', 'apple_cash_handle', 'cash_app_handle', 'label_mode', 'label_size', 'users']) if (p[k] !== undefined) db.settings[k] = p[k];
     log(user, 'settings.save', '', { keys: Object.keys(partial || {}).filter((k) => k !== 'token') });
     return Object.assign({}, db.settings);
   },

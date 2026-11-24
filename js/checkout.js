@@ -208,8 +208,9 @@ function mount(container) {
   const root = el('div', { class: 'ck-root' });
   container.replaceChildren(root);
 
-  let view = 'cart';           // cart | pay | cash | change | venmo | zelle | done
+  let view = 'cart';           // cart | pay | cash | change | venmo | zelle | apple_cash | cash_app | done
   let tendered = null;         // cents
+  let parts = [];              // split payments taken so far: [{method, amount (cents)}] (2026-11-24)
   let paying = false;
   let showBanner = false;   // scroll the 'already sold' banner into view on the next cart paint
   let lastSale = null;
@@ -387,7 +388,8 @@ function mount(container) {
       return;
     }
     if (scanner.running) stopScanner(false);
-    const screens = { pay: payScreen, cash: cashScreen, change: changeScreen, venmo: venmoScreen, zelle: zelleScreen, done: doneScreen };
+    const screens = { pay: payScreen, cash: cashScreen, change: changeScreen, venmo: venmoScreen, zelle: zelleScreen,
+      apple_cash: appleScreen, cash_app: cashAppScreen, done: doneScreen };
     root.replaceChildren((screens[view] || payScreen)());
     window.scrollTo(0, 0);
   }
@@ -440,7 +442,7 @@ function mount(container) {
         el('div', { class: 'ck-disc' }, discBtn(10), discBtn(20), discBtn(50), customBtn)) : null,
       el('div', { class: 'ck-paybar' },
         el('div', { class: 'ck-total' }, el('span', {}, 'TOTAL'), el('b', { 'data-total': dollars(t.total) }, $(t.total))),
-        BigButton(canPay ? 'Pay ' + $(t.total) : (cart.lines.some(l => l.pending) ? 'Looking up…' : 'Pay'), () => { view = 'pay'; paint(); },
+        BigButton(canPay ? 'Pay ' + $(t.total) : (cart.lines.some(l => l.pending) ? 'Looking up…' : 'Pay'), () => { parts = []; view = 'pay'; paint(); },
           { variant: 'primary', disabled: !canPay })),
       cart.lines.length ? el('button', { type: 'button', class: 'ck-clear', onclick: async () => {
         if (await confirmModal('Clear the whole cart?', 'Clear cart')) { resetCart(); paint(); }
@@ -479,25 +481,71 @@ function mount(container) {
     return [el('p', { class: 'ck-label' }, label), el('p', { class: 'ck-giant', 'data-total': dollars(totals().total) }, $(totals().total))];
   }
 
+  // ---- what's left to pay (split payments: parts already taken come off the total)
+  function partsC() { return parts.reduce((x, y) => x + y.amount, 0); }
+  function due() { return Math.max(0, totals().total - partsC()); }
+  function dueBlock(label) {
+    const d = due();
+    return [el('p', { class: 'ck-label' }, parts.length ? 'LEFT TO PAY' : (label || 'TOTAL')),
+      el('p', { class: 'ck-giant', 'data-total': dollars(d) }, $(d))];
+  }
+  function partsList() {
+    if (!parts.length) return null;
+    return el('div', { class: 'ck-parts' },
+      el('p', { class: 'ck-note' }, 'Already paid: ' + parts.map(x => $(x.amount) + ' ' + methodName(x.method)).join(' + ') +
+        ' (total ' + $(totals().total) + ')'),
+      el('button', { type: 'button', class: 'ck-link', onclick: async () => {
+        if (await confirmModal('Start the payment over? Give back the ' + $(partsC()) + ' already taken first.', 'Start over')) { parts = []; paint(); }
+      } }, 'Start payment over'));
+  }
+  // Which digital methods have an account saved (all of them if this phone has no settings copy yet).
+  function hasHandle(m) {
+    const p = pay;
+    if (!p) return true;
+    const v = m === 'venmo' ? p.venmo_handle : m === 'zelle' ? p.zelle_handle : m === 'apple_cash' ? p.apple_cash_handle : p.cash_app_handle;
+    return !!String(v || '').trim();
+  }
+
   function payScreen() {
     refreshPay();
-    return el('div', { class: 'ck-screen' }, back(),
-      totalBlock(),
-      el('p', { class: 'ck-label' }, 'How are they paying?'),
-      methodBtn('Cash', () => { tendered = null; view = 'cash'; paint(); }),
-      methodBtn('Venmo', () => { view = 'venmo'; paint(); }),
-      methodBtn('Zelle / Apple Cash', () => { view = 'zelle'; paint(); }));
+    const go = (v) => () => { tendered = null; view = v; paint(); };
+    return el('div', { class: 'ck-screen' }, parts.length ? partsList() : back(),
+      dueBlock(),
+      el('p', { class: 'ck-label' }, parts.length ? 'How are they paying the rest?' : 'How are they paying?'),
+      methodBtn('Cash', go('cash')),
+      hasHandle('venmo') ? methodBtn('Venmo', go('venmo')) : null,
+      hasHandle('zelle') ? methodBtn('Zelle', go('zelle')) : null,
+      hasHandle('apple_cash') ? methodBtn('Apple Cash', go('apple_cash')) : null,
+      hasHandle('cash_app') ? methodBtn('Cash App', go('cash_app')) : null,
+      parts.length ? null : el('p', { class: 'ck-note', style: 'margin-top:6px' }, 'Paying two ways? Pick the first one, then tap “Only part of it”.'));
   }
   function methodBtn(label, fn) { const b = BigButton(label, fn, { variant: 'primary' }); b.classList.add('ck-method'); return b; }
 
+  // "Only part of it": take some of what's due in this method, then pick how they pay the rest.
+  function partButton(method) {
+    return BigButton('Only part of it (split)', async () => {
+      const d = due();
+      const n = await keypad({ title: 'How much ' + methodName(method) + '? (of ' + $(d) + ')', value: null });
+      if (n == null) return;
+      const c = cents(n);
+      if (!(c > 0)) return;
+      if (c >= d) { toast('That covers it all. Use “Paid ✓” instead.', 'info'); return; }
+      parts.push({ method, amount: c });
+      beep(true);
+      toast('Got ' + $(c) + ' ' + methodName(method) + '. ' + $(d - c) + ' left.', 'ok');
+      view = 'pay'; paint();
+    }, { variant: 'secondary' });
+  }
+
   function cashScreen() {
-    const total = totals().total;
+    const total = due();
     // likely bills: next $5, next $10, next $20, then $50 / $100 (only amounts above the total)
     const up = step => Math.floor(total / step) * step + step;
     const bills = [...new Set([up(500), up(1000), up(2000), 5000, 10000])].filter(b => b > total).sort((x, y) => x - y).slice(0, 4);
     const choose = c => { tendered = c; view = 'change'; paint(); };
     return el('div', { class: 'ck-screen' }, back('pay', 'Back'),
-      totalBlock('Cash · TOTAL'),
+      partsList(),
+      dueBlock('Cash · TOTAL'),
       el('p', { class: 'ck-label' }, 'How much cash did they hand you?'),
       el('div', { class: 'ck-bills' },
         el('button', { type: 'button', onclick: () => choose(total) }, 'Exact'),
@@ -505,49 +553,65 @@ function mount(container) {
       BigButton('Other amount', async () => {
         const n = await keypad({ title: 'Cash they handed you', value: null });
         if (n == null) return;
-        if (cents(n) < total) { toast('That is less than the total (' + $(total) + ').', 'error'); return; }
+        if (cents(n) < total) { toast('That is less than ' + $(total) + '. To take part in cash, use “Only part of it”.', 'error'); return; }
         choose(cents(n));
-      }, { variant: 'secondary' }));
+      }, { variant: 'secondary' }),
+      partButton('cash'));
   }
 
   function changeScreen() {
-    const total = totals().total;
+    const total = due();
     const change = Math.max(0, (tendered || 0) - total);
     return el('div', { class: 'ck-screen' }, back('cash', 'Back'),
       el('div', { class: 'ck-change' },
         el('p', { class: 'ck-label' }, change ? 'GIVE CHANGE' : 'NO CHANGE'),
         el('p', { class: 'ck-giant', 'data-change': dollars(change) }, $(change))),
-      el('p', { class: 'ck-note' }, 'They gave ' + $(tendered || 0) + ' for a ' + $(total) + ' total.'),
+      el('p', { class: 'ck-note' }, 'They gave ' + $(tendered || 0) + ' for ' + $(total) + (parts.length ? ' (the rest of the total).' : ' total.')),
       paidButton('cash'));
   }
 
+  // Digital methods: how to send, big amount, wait for their screen, then Paid ✓ (or only part of it).
+  function digitalScreen(method, title, how, extra) {
+    return el('div', { class: 'ck-screen' }, back('pay', 'Back'),
+      partsList(),
+      el('p', { class: 'ck-label' }, title),
+      ...(extra || []),
+      how,
+      ...dueBlock('Amount to send'),
+      el('p', { class: 'ck-note' }, 'Wait until you see the payment go through on their phone.'),
+      paidButton(method),
+      partButton(method));
+  }
   function venmoScreen() {
     const p = pay || {};
     const handle = cleanHandle(p.venmo_handle);
-    const imgSrc = p.venmo_qr_url || p.venmo_qr_thumb || (p.venmo_qr_file_id ? 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(p.venmo_qr_file_id) + '&sz=w800' : '');
-    let qr = null;
-    if (imgSrc) {
-      qr = el('img', { class: 'ck-qrimg', alt: 'Venmo QR code', src: imgSrc });
-      qr.addEventListener('error', () => { const g = generatedVenmoQr(handle); if (g) qr.replaceWith(g); else qr.remove(); });
-    } else qr = generatedVenmoQr(handle);
-    return el('div', { class: 'ck-screen' }, back('pay', 'Back'),
-      el('p', { class: 'ck-label' }, 'Venmo: have them scan this'),
-      qr,
-      handle ? el('p', { class: 'ck-handle' }, '@' + handle) : el('p', { class: 'ck-note' }, 'No Venmo name saved yet. Ask the owner.'),
-      ...totalBlock('Amount to send'),
-      el('p', { class: 'ck-note' }, 'Wait until you see the payment on their screen.'),
-      paidButton('venmo'));
+    // Fresh QR per sale: the buyer's camera opens Venmo to our account with the amount and a note filled in.
+    let qr = handle ? payQr('https://venmo.com/' + encodeURIComponent(handle) + '?txn=pay&amount=' + dollars(due()).toFixed(2) +
+      '&note=' + encodeURIComponent('Sale Desk purchase')) : null;
+    if (!qr) { // no username saved: fall back to an uploaded Venmo QR picture
+      const imgSrc = p.venmo_qr_url || p.venmo_qr_thumb || '';
+      if (imgSrc) qr = el('img', { class: 'ck-qrimg', alt: 'Venmo QR code', src: imgSrc });
+    }
+    return digitalScreen('venmo', 'Venmo: have them scan this with their camera', handle
+      ? el('p', { class: 'ck-handle' }, '@' + handle)
+      : el('p', { class: 'ck-note' }, 'No Venmo username saved yet. Ask the owner (Settings → Payments).'), qr ? [qr] : []);
   }
-
+  function cashAppScreen() {
+    const tag = String((pay || {}).cash_app_handle || '').trim().replace(/^\$/, '');
+    const qr = tag ? payQr('https://cash.app/$' + encodeURIComponent(tag) + '/' + dollars(due()).toFixed(2)) : null;
+    return digitalScreen('cash_app', 'Cash App: have them scan this with their camera', tag
+      ? el('p', { class: 'ck-handle' }, '$' + tag)
+      : el('p', { class: 'ck-note' }, 'No Cash App $cashtag saved yet. Ask the owner (Settings → Payments).'), qr ? [qr] : []);
+  }
   function zelleScreen() {
-    const p = pay || {};
-    const z = String(p.zelle_handle || '').trim();
-    return el('div', { class: 'ck-screen' }, back('pay', 'Back'),
-      el('p', { class: 'ck-label' }, 'Zelle or Apple Cash: send to'),
-      z ? el('p', { class: 'ck-handle' }, z) : el('p', { class: 'ck-note' }, 'No Zelle / Apple Cash handle saved yet. Ask the owner.'),
-      ...totalBlock('Amount to send'),
-      el('p', { class: 'ck-note' }, 'Wait until you see the payment on their screen.'),
-      paidButton('zelle_apple'));
+    const z = String((pay || {}).zelle_handle || '').trim();
+    return digitalScreen('zelle', 'Zelle: send to', z ? el('p', { class: 'ck-handle' }, z)
+      : el('p', { class: 'ck-note' }, 'No Zelle phone/email saved yet. Ask the owner (Settings → Payments).'));
+  }
+  function appleScreen() {
+    const a = String((pay || {}).apple_cash_handle || '').trim();
+    return digitalScreen('apple_cash', 'Apple Cash: send in Messages to', a ? el('p', { class: 'ck-handle' }, a)
+      : el('p', { class: 'ck-note' }, 'No Apple Cash phone number saved yet. Ask the owner (Settings → Payments).'));
   }
 
   function paidButton(method) {
@@ -566,14 +630,22 @@ function mount(container) {
       lines: cart.lines.filter(l => !l.pending).map(cleanLine),
       method,
     };
+    const finalC = due();
+    if (parts.length) { // split: earlier parts + this last one (cash keeps what they handed over, for change)
+      params.payments = parts.map(x => ({ method: x.method, amount: dollars(x.amount) }))
+        .concat([Object.assign({ method, amount: dollars(finalC) }, method === 'cash' && tendered != null ? { tendered: dollars(tendered) } : {})]);
+      delete params.method;
+    }
     if (ev && ev.event_id) params.event_id = ev.event_id;
     if (cart.customTotal != null) params.custom_total = dollars(cents(cart.customTotal));
     else if (cart.discountPct) params.cart_discount_pct = Math.round(frac(cart.discountPct) * 100); // whole percent, like event markdowns (pct: 50)
-    if (method === 'cash' && tendered != null) params.tendered = dollars(tendered);
+    if (!parts.length && method === 'cash' && tendered != null) params.tendered = dollars(tendered);
     try {
       const sale = await call('checkout', params);
-      lastSale = Object.assign({ total: dollars(t.total), method, time: new Date().toISOString(),
-        lines: params.lines, tendered: params.tendered, change: method === 'cash' ? dollars(Math.max(0, (tendered || 0) - t.total)) : 0 }, sale || {});
+      lastSale = Object.assign({ total: dollars(t.total), method: parts.length ? 'split' : method, time: new Date().toISOString(),
+        payments: params.payments, lines: params.lines, tendered: params.tendered,
+        change: method === 'cash' && tendered != null ? dollars(Math.max(0, tendered - finalC)) : 0 }, sale || {});
+      parts = [];
       rememberSale(lastSale);
       resetCart();
       try { emit('sale:done', lastSale); } catch (_) { /* ignore */ }
@@ -612,7 +684,8 @@ function mount(container) {
     return el('div', { class: 'ck-screen ck-done' },
       el('div', { class: 'ck-check' }, '✓'),
       el('p', { class: 'ck-big' }, 'Sale complete: ' + money(Number(s.total) || 0)),
-      s.method === 'cash' && Number(s.change) > 0 ? el('p', { class: 'ck-label' }, 'Change given: ' + money(Number(s.change))) : null,
+      Number(s.change) > 0 ? el('p', { class: 'ck-label' }, 'Change given: ' + money(Number(s.change))) : null,
+      Array.isArray(s.payments) && s.payments.length > 1 ? el('p', { class: 'ck-note' }, s.payments.map(x => money(Number(x.amount)) + ' ' + methodName(x.method)).join(' + ')) : null,
       s.sale_id ? el('p', { class: 'ck-note' }, 'Sale ' + s.sale_id) : null,
       BigButton('Next customer', () => { view = 'cart'; paint(); }, { variant: 'primary' }));
   }
@@ -620,8 +693,8 @@ function mount(container) {
   async function refreshPay() {
     try {
       const s = await call('settings.get');
-      pay = { venmo_handle: s.venmo_handle, zelle_handle: s.zelle_handle, venmo_qr_file_id: s.venmo_qr_file_id,
-        venmo_qr_url: s.venmo_qr_url, venmo_qr_thumb: s.venmo_qr_thumb };
+      pay = { venmo_handle: s.venmo_handle, zelle_handle: s.zelle_handle, apple_cash_handle: s.apple_cash_handle,
+        cash_app_handle: s.cash_app_handle, venmo_qr_file_id: s.venmo_qr_file_id, venmo_qr_url: s.venmo_qr_url, venmo_qr_thumb: s.venmo_qr_thumb };
       save(PAY_KEY, localStorage, pay);
     } catch (_) { /* helpers can't read settings (§3); use the copy cached from the last admin on this phone */ }
   }
@@ -732,16 +805,18 @@ function tierOrder(t) { return /BAG/i.test(t.tier) ? 1e6 : Number(t.price) || 0;
 function tierName(t) { return /BAG/i.test(t.tier) ? 'Fill a bag' : (t.label || money(Number(t.price) || 0) + ' rack'); }
 function tierBtnSub(t) { return /BAG/i.test(t.tier) ? 'fill a bag' : 'rack item'; }
 function cleanHandle(hd) { return String(hd || '').trim().replace(/^@/, ''); }
-function generatedVenmoQr(handle) {
-  if (!handle || !window.qrcode) return null;
+/** QR (as a crisp SVG) for a payment link the buyer scans with their phone camera. */
+function payQr(url) {
+  if (!window.qrcode) return null;
   const box = document.createElement('div');
-  box.innerHTML = qrSvg('https://venmo.com/u/' + handle, 4);
+  box.innerHTML = qrSvg(url, 4);
   const svg = box.firstElementChild;
-  if (svg) { svg.setAttribute('class', 'ck-qrimg'); svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', 'Venmo QR code'); }
+  if (svg) { svg.setAttribute('class', 'ck-qrimg'); svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', 'Payment QR code'); }
   return svg || null;
 }
 function truthy(v) { return v === true || v === 'true' || v === 'TRUE' || v === 1; }
-function methodName(m) { return m === 'cash' ? 'Cash' : m === 'venmo' ? 'Venmo' : m === 'zelle_apple' ? 'Zelle/Apple' : (m || ''); }
+const METHOD_NAMES = { cash: 'Cash', venmo: 'Venmo', zelle: 'Zelle', apple_cash: 'Apple Cash', cash_app: 'Cash App', zelle_apple: 'Zelle/Apple', split: 'Split' };
+function methodName(m) { return METHOD_NAMES[m] || (m || ''); }
 function timeStr(t) { const d = new Date(t); return isNaN(d) ? '' : d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
 
 // ------------------------------------------------------------------ tab export (§9)

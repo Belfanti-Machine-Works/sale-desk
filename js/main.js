@@ -18,7 +18,7 @@ const ORDER = ['price', 'review', 'checkout', 'inventory', 'dashboard', 'promo',
 const BAR_SLOTS = 4;
 const app = document.getElementById('app');
 const query = new URLSearchParams(location.search);
-const APP_VERSION = '20261123-223036'; // publish.ps1 stamps the publish time here (shown on the More tab)
+const APP_VERSION = '20261123-225151'; // publish.ps1 stamps the publish time here (shown on the More tab)
 
 let allTabs = null;
 let containers = {};

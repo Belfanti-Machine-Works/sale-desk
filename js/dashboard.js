@@ -19,7 +19,7 @@ function role() { return (session && session.role) || ''; }
 function load(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (_) { return d; } }
 function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) { /* ignore */ } }
 function errMsg(e) { try { return errorMessage(e); } catch (_) { return 'Something went wrong. Try again.'; } }
-const METHOD_NAMES = { cash: 'Cash', venmo: 'Venmo', zelle_apple: 'Zelle / Apple Cash' };
+const METHOD_NAMES = { cash: 'Cash', venmo: 'Venmo', zelle: 'Zelle', apple_cash: 'Apple Cash', cash_app: 'Cash App', zelle_apple: 'Zelle / Apple Cash' };
 
 // ------------------------------------------------------------------ CSS
 const CSS = `
@@ -149,7 +149,9 @@ function mount(container) {
     if (!d) return el('div', {}, head, sel, upd);
 
     const by = d.revenue_by_method || {};
-    const methods = ['cash', 'venmo', 'zelle_apple'].concat(Object.keys(by).filter(k => !METHOD_NAMES[k]));
+    // split sales are counted under each method they used (backend); hide the old combined Zelle/Apple row when empty
+    const methods = ['cash', 'venmo', 'zelle', 'apple_cash', 'cash_app'].concat(num(by.zelle_apple) ? ['zelle_apple'] : [])
+      .concat(Object.keys(by).filter(k => !METHOD_NAMES[k]));
     const tierSold = sumTierQty(d.tier_qty_sold);
     const r = role();
 
