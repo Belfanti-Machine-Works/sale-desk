@@ -63,18 +63,20 @@ function tone(freq, at, dur, vol, type) {
   o.type = type; o.frequency.value = freq;
   g.gain.setValueAtTime(0.0001, at);
   g.gain.exponentialRampToValueAtTime(vol, at + 0.008);
-  g.gain.setValueAtTime(vol, at + dur * 0.6);
+  g.gain.setValueAtTime(vol, at + Math.max(0.01, dur - 0.025));
   g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
   o.connect(g); g.connect(audioCtx.destination);
   o.start(at); o.stop(at + dur + 0.02);
 }
-// kind: true / 'ok' = in the cart (bright two-note "ding-DING"), false / 'error' = problem (low double buzz),
-// 'tick' = code read, looking it up (short quiet click).
+// LOUD (owner, 2026-11-24: "much louder"): full-scale square waves at 2-3 kHz, where phone speakers and ears are
+// loudest (store scanners beep there too), and longer notes. The error buzz moved up from 185 Hz, which a phone
+// speaker barely plays.
+// kind: true / 'ok' = in the cart ("bee-BEEP"), false / 'error' = problem (double buzz), 'tick' = code read.
 function playSound(kind) {
   const t = audioCtx.currentTime + 0.01;
-  if (kind === 'tick') tone(2200, t, 0.03, 0.25, 'square');
-  else if (kind === 'error') { tone(185, t, 0.18, 0.7, 'square'); tone(185, t + 0.24, 0.22, 0.7, 'square'); }
-  else { tone(1175, t, 0.08, 0.9, 'triangle'); tone(1760, t + 0.09, 0.16, 0.9, 'triangle'); }
+  if (kind === 'tick') tone(3000, t, 0.035, 0.5, 'square');
+  else if (kind === 'error') { tone(440, t, 0.2, 1, 'square'); tone(440, t + 0.27, 0.25, 1, 'square'); }
+  else { tone(2093, t, 0.12, 1, 'square'); tone(2794, t + 0.13, 0.24, 1, 'square'); }
 }
 let flashEl = null;
 function flash(kind) {
