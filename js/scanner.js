@@ -27,34 +27,83 @@ export function ensureLib(name) {
 }
 
 // ---------- feedback: beep + vibrate ----------
+// iPhone notes (2026-11-24, scans were silent at checkout):
+//  - Web Audio is muted by the ringer/silent switch unless the audio session is "playback" (Safari 17+).
+//  - Audio only starts inside a tap, and iOS suspends it again after calls / app switches. The camera can
+//    restart without a tap, so keepAudioUnlocked() re-unlocks on ANY tap on the page.
+//  - iPhones don't vibrate for web pages, so every sound also gets a screen flash.
 let audioCtx = null;
 /** Call from a user gesture (iOS only lets audio start after a tap). */
 export function unlockAudio() {
   try {
+    if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback';
+  } catch (_) { /* older Safari */ }
+  try {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
-    if (!audioCtx) audioCtx = new AC();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
+    if (!audioCtx || audioCtx.state === 'closed') audioCtx = new AC();
+    if (audioCtx.state !== 'running') audioCtx.resume().catch(() => {});
+    // A silent sample played inside the tap fully unlocks iOS audio.
+    const src = audioCtx.createBufferSource();
+    src.buffer = audioCtx.createBuffer(1, 1, 22050);
+    src.connect(audioCtx.destination);
+    src.start(0);
   } catch (_) { /* no audio, fine */ }
 }
-export function beep(ok = true) {
+let unlockHooked = false;
+/** Re-unlock audio on every tap/key anywhere (call once when the checkout screen opens). */
+export function keepAudioUnlocked() {
+  if (unlockHooked) return;
+  unlockHooked = true;
+  for (const ev of ['touchend', 'click', 'keydown']) document.addEventListener(ev, unlockAudio, { capture: true, passive: true });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && audioCtx && audioCtx.state !== 'running') audioCtx.resume().catch(() => {}); });
+}
+function tone(freq, at, dur, vol, type) {
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, at);
+  g.gain.exponentialRampToValueAtTime(vol, at + 0.008);
+  g.gain.setValueAtTime(vol, at + dur * 0.6);
+  g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(at); o.stop(at + dur + 0.02);
+}
+// kind: true / 'ok' = in the cart (bright two-note "ding-DING"), false / 'error' = problem (low double buzz),
+// 'tick' = code read, looking it up (short quiet click).
+function playSound(kind) {
+  const t = audioCtx.currentTime + 0.01;
+  if (kind === 'tick') tone(2200, t, 0.03, 0.25, 'square');
+  else if (kind === 'error') { tone(185, t, 0.18, 0.7, 'square'); tone(185, t + 0.24, 0.22, 0.7, 'square'); }
+  else { tone(1175, t, 0.08, 0.9, 'triangle'); tone(1760, t + 0.09, 0.16, 0.9, 'triangle'); }
+}
+let flashEl = null;
+function flash(kind) {
+  if (kind === 'tick') return;
   try {
-    if (audioCtx && audioCtx.state === 'running') {
-      const o = audioCtx.createOscillator();
-      const g = audioCtx.createGain();
-      o.type = ok ? 'sine' : 'square';
-      o.frequency.value = ok ? 1320 : 220;
-      const t = audioCtx.currentTime, dur = ok ? 0.09 : 0.28;
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(0.35, t + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      o.connect(g); g.connect(audioCtx.destination);
-      o.start(t); o.stop(t + dur + 0.02);
+    if (!flashEl) {
+      flashEl = document.createElement('div');
+      flashEl.setAttribute('aria-hidden', 'true');
+      Object.assign(flashEl.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: '9999', opacity: '0', transition: 'opacity .35s ease-out' });
+      document.body.appendChild(flashEl);
+    }
+    flashEl.style.boxShadow = 'inset 0 0 0 14px ' + (kind === 'error' ? '#d22' : '#1a9e3a');
+    flashEl.style.transition = 'none'; flashEl.style.opacity = '1';
+    void flashEl.offsetWidth; // restart the fade
+    flashEl.style.transition = 'opacity .45s ease-out'; flashEl.style.opacity = '0';
+  } catch (_) { /* ignore */ }
+}
+export function beep(ok = true) {
+  const kind = ok === 'tick' ? 'tick' : (ok === false || ok === 'error') ? 'error' : 'ok';
+  try {
+    if (audioCtx) {
+      if (audioCtx.state === 'running') playSound(kind);
+      else audioCtx.resume().then(() => playSound(kind)).catch(() => {});
     }
   } catch (_) { /* ignore */ }
+  flash(kind);
   try {
     const ua = navigator.userActivation;
-    if (navigator.vibrate && (!ua || ua.hasBeenActive)) navigator.vibrate(ok ? 60 : [80, 60, 80]);
+    if (kind !== 'tick' && navigator.vibrate && (!ua || ua.hasBeenActive)) navigator.vibrate(kind === 'ok' ? 60 : [80, 60, 80]);
   } catch (_) { /* ignore */ }
 }
 

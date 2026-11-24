@@ -4,7 +4,7 @@
 import { call, ApiError } from './api.js';
 import { session, can, emit } from './state.js';
 import { h, BigButton, toast, keypad, confirmModal, sheet, money, errorMessage } from './ui.js';
-import { createScanner, decodeImageFile, unlockAudio, beep, normalizeCode, ensureLib } from './scanner.js';
+import { createScanner, decodeImageFile, unlockAudio, keepAudioUnlocked, beep, normalizeCode, ensureLib } from './scanner.js';
 import { qrSvg } from './labels.js';
 
 const IS_MOCK = new URLSearchParams(location.search).get('mock') === '1' ||
@@ -200,6 +200,7 @@ let current = null;
 
 function mount(container) {
   injectCss();
+  keepAudioUnlocked(); // the camera can restart without a tap; any tap re-enables the scan sounds
   if (current) current.destroy();
   const ctl = { destroyed: false };
   current = ctl;
@@ -279,7 +280,8 @@ function mount(container) {
     if (!code) return;
     const existing = cart.lines.find(l => l.type === 'item' && l.id === code);
     if (existing) { beep(false); toast(code + ' is already in the cart.', 'info'); return; }
-    const ph = { key: newKey(), type: 'item', id: code, qty: 1, desc: 'Looking up ' + code + '…', price: 0, list_price: 0, pending: true };
+    beep('tick'); // heard right away: code read, looking it up ("ding" follows once it's in the cart)
+    const ph ={ key: newKey(), type: 'item', id: code, qty: 1, desc: 'Looking up ' + code + '…', price: 0, list_price: 0, pending: true };
     cart.lines.push(ph);
     paint();
     try {
@@ -293,6 +295,7 @@ function mount(container) {
         const it = res.item || {};
         if (cart.lines.some(l => l !== ph && l.type === 'item' && l.id === it.id)) {
           cart.lines.splice(i, 1);
+          beep(false);
           toast(it.id + ' is already in the cart.', 'info');
         } else {
           const p = Number(it.final_price) || Number(it.ai_price) || 0;
