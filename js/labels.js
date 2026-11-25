@@ -65,6 +65,17 @@ const CSS = `
 .sd-3x2 .sd-l-qr svg{width:13mm;height:13mm}
 .sd-3x2 .sd-l-id{position:absolute;right:3mm;bottom:15.7mm;font-size:3.2mm;line-height:1;text-align:right;white-space:nowrap}
 
+/* 2 x 1 in label on Rollo's ROLLO-2X1 roll (owner, 2026-11-24; same as render_2x1 in pi/sale_desk_printer.py):
+   QR left; big price, brand, "Was $X new", "Resells $A–$B", item id on the right. No photo. */
+.sd-label.sd-2x1{width:50.8mm;height:25.4mm;min-width:50.8mm;display:flex;align-items:center;gap:1.2mm;padding:0 1.5mm}
+.sd-2x1 .sd-l-qr{width:16mm;height:16mm;flex:none}
+.sd-2x1 .sd-l-qr svg{display:block;width:16mm;height:16mm}
+.sd-2x1 .sd-f-txt{min-width:0;flex:1;display:flex;flex-direction:column;gap:.5mm}
+.sd-2x1 .sd-l-price{height:auto;line-height:.9;letter-spacing:-.02em;white-space:nowrap}
+.sd-2x1 .sd-l-brand{font-size:2.7mm;font-weight:700;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sd-2x1 .sd-l-small{font-size:2.5mm;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sd-2x1 .sd-l-id{font-size:2.7mm;font-weight:800;line-height:1}
+
 #sd-print-root{display:none}
 @media print{
   html.sd-printing body>*:not(#sd-print-root){display:none!important}
@@ -76,6 +87,7 @@ const CSS = `
   #sd-print-root .sd-page:last-child{break-after:auto;page-break-after:auto}
   #sd-print-root .sd-page-label{width:62mm;height:100mm}
   #sd-print-root .sd-page-label.sd-page-3x2{width:76.2mm;height:50.8mm}
+  #sd-print-root .sd-page-label.sd-page-2x1{width:50.8mm;height:25.4mm}
 }
 `;
 
@@ -146,14 +158,35 @@ function fillQr(el, text) {
 }
 
 // ---------------------------------------------------------------- label sizes
-// Settings `label_size`: '3x2' (3 x 2 in, Rollo thermal via the Pi print server; the default) or
-// '62x100' (62 x 100 mm, Brother QL). printLabels() remembers the size it was last given.
+// Settings `label_size`: '2x1' (2 x 1 in, Rollo ROLLO-2X1 roll; the default since 2026-11-24), '3x2' (3 x 2 in;
+// no Rollo-brand roll exists) or '62x100' (62 x 100 mm, Brother QL). printLabels() remembers the size it was last given.
 export const LABEL_SIZES = {
+  '2x1': { page: '@page{size:2in 1in;margin:0}', cls: 'sd-page-2x1', name: '2 × 1 in (Rollo)' },
   '3x2': { page: '@page{size:3in 2in;margin:0}', cls: 'sd-page-3x2', name: '3 × 2 in (Rollo)' },
   '62x100': { page: '@page{size:62mm 100mm;margin:0}', cls: '', name: '62 × 100 mm (Brother)' },
 };
-let currentSize = '3x2';
+let currentSize = '2x1';
 export function setLabelSize(size) { if (LABEL_SIZES[size]) currentSize = size; return currentSize; }
+
+/** 2 x 1 in label (see CSS above): QR left; price, brand, was/resells, id on the right. */
+function renderLabel2x1(item) {
+  const price = priceText(item), id = String(item.id || '');
+  const el = div('sd-label sd-2x1');
+  el.dataset.id = id;
+  const qr = div('sd-l-qr'); fillQr(qr, id);
+  const txt = div('sd-f-txt');
+  const p = div('sd-l-price', price);
+  p.style.fontSize = Math.min(9.5, +(28 / (0.66 * price.length)).toFixed(1)) + MM; // fits the ~30 mm text column
+  txt.appendChild(p);
+  const brand = String(item.brand_display || item.brand || item.title || '').trim();
+  if (brand) txt.appendChild(div('sd-l-brand', brand));
+  const was = wasText(item), comps = compsText(item).replace(' online', '');
+  if (was) txt.appendChild(div('sd-l-small', was));
+  if (comps) txt.appendChild(div('sd-l-small', comps));
+  txt.appendChild(div('sd-l-id', id));
+  el.append(qr, txt);
+  return el;
+}
 
 /** 3 x 2 in flat one-sided label (see CSS above; mirrors render_3x2 in pi/sale_desk_printer.py). */
 function renderLabel3x2(item) {
@@ -193,6 +226,7 @@ function renderLabel3x2(item) {
 /** Label element in the chosen size (default: the last size printLabels used). Screen preview + print. */
 export function renderLabel(item, size = currentSize) {
   injectCss();
+  if (size === '2x1') return renderLabel2x1(item);
   if (size === '3x2') return renderLabel3x2(item);
   const price = priceText(item), was = wasText(item), id = String(item.id || '');
   const el = document.createElement('div');
