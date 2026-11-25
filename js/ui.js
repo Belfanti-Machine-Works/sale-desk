@@ -122,7 +122,8 @@ function closeOverlay(o) {
 
 // ---------------------------------------------------------------- keypad()
 // keypad({title, value}) -> Promise<number|null>. Full screen numeric pad; cents optional.
-export function keypad({ title = 'Type a price', value = null } = {}) {
+// count: true = a whole number of pieces (no "$", no decimal point, max 999), e.g. how many pieces in a lot.
+export function keypad({ title = 'Type a price', value = null, count = false, unit = 'pieces' } = {}) {
   return new Promise((resolve) => {
     let typed = '';
     const o = overlay('keypad');
@@ -131,21 +132,23 @@ export function keypad({ title = 'Type a price', value = null } = {}) {
     const current = () => {
       if (typed === '') return value === null || value === undefined ? null : Number(value);
       const n = parseFloat(typed);
+      if (count) return isFinite(n) && n > 0 ? Math.floor(n) : null;
       return isFinite(n) ? Math.round(n * 100) / 100 : null;
     };
     const render = () => {
       if (typed === '') {
-        display.textContent = value === null || value === undefined ? '$0' : money(value);
+        display.textContent = count ? (value == null ? '0 ' + unit : value + ' ' + unit) : value === null || value === undefined ? '$0' : money(value);
         display.classList.add('kp-placeholder');
       } else {
-        display.textContent = '$' + typed;
+        display.textContent = count ? typed + ' ' + (typed === '1' ? unit.replace(/s$/, '') : unit) : '$' + typed;
         display.classList.remove('kp-placeholder');
       }
       okBtn.disabled = current() === null;
     };
     const press = (k) => {
       if (k === 'del') typed = typed.slice(0, -1);
-      else if (k === '.') { if (!typed.includes('.')) typed = (typed || '0') + '.'; }
+      else if (k === '.') { if (!count && !typed.includes('.')) typed = (typed || '0') + '.'; }
+      else if (count) { if (typed.length >= 3) return; typed = typed === '0' ? k : typed + k; }
       else {
         const dot = typed.indexOf('.');
         if (dot >= 0 && typed.length - dot > 2) return; // max 2 decimals
@@ -167,13 +170,14 @@ export function keypad({ title = 'Type a price', value = null } = {}) {
       else if (e.key === 'Escape') done(null);
     };
     document.addEventListener('keydown', onKey);
-    const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'del'];
+    const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', count ? '' : '.', '0', 'del'];
     o.appendChild(h('div', { class: 'kp-panel' },
       h('div', { class: 'kp-title' }, title),
       display,
       h('div', { class: 'kp-grid' }, keys.map((k) =>
-        h('button', { type: 'button', class: 'kp-key', 'aria-label': k === 'del' ? 'Delete' : k, onClick: () => press(k) },
-          k === 'del' ? '⌫' : k))),
+        k === '' ? h('span', { class: 'kp-key kp-blank', 'aria-hidden': 'true' }) // count mode: no decimal point
+          : h('button', { type: 'button', class: 'kp-key', 'aria-label': k === 'del' ? 'Delete' : k, onClick: () => press(k) },
+            k === 'del' ? '⌫' : k))),
       h('div', { class: 'row' }, BigButton('Cancel', () => done(null), { variant: 'secondary' }), okBtn),
     ));
     render();

@@ -472,7 +472,7 @@ function renderPrice(container) {
     // Start a lot: several pieces in one bag, one photo, one price, one label.
     if (r === 'label' && !count() && !flow.retake && !flow.lot) {
       view.appendChild(BigButton('📦  Price a lot (bag of several)', async () => {
-        const n = await keypad({ title: 'How many pieces in the lot?', value: null });
+        const n = await keypad({ title: 'How many pieces in the lot?', value: null, count: true });
         if (n == null) return;
         const k = Math.floor(Number(n));
         if (!(k >= 2) || k > 999) { toast('A lot is 2 to 999 pieces.', 'error'); return; }
