@@ -88,6 +88,7 @@ const CSS = `
   #sd-print-root .sd-page-label{width:62mm;height:100mm}
   #sd-print-root .sd-page-label.sd-page-3x2{width:76.2mm;height:50.8mm}
   #sd-print-root .sd-page-label.sd-page-2x1{width:50.8mm;height:25.4mm}
+  #sd-print-root .sd-page-label.sd-page-225{width:57.15mm;height:31.75mm}
 }
 `;
 
@@ -161,29 +162,36 @@ function fillQr(el, text) {
 // Settings `label_size`: '2x1' (2 x 1 in, Rollo ROLLO-2X1 roll; the default since 2026-11-24), '3x2' (3 x 2 in;
 // no Rollo-brand roll exists) or '62x100' (62 x 100 mm, Brother QL). printLabels() remembers the size it was last given.
 export const LABEL_SIZES = {
+  '2.25x1.25': { page: '@page{size:2.25in 1.25in;margin:0}', cls: 'sd-page-225', name: '2¼ × 1¼ in' },
   '2x1': { page: '@page{size:2in 1in;margin:0}', cls: 'sd-page-2x1', name: '2 × 1 in (Rollo)' },
   '3x2': { page: '@page{size:3in 2in;margin:0}', cls: 'sd-page-3x2', name: '3 × 2 in (Rollo)' },
   '62x100': { page: '@page{size:62mm 100mm;margin:0}', cls: '', name: '62 × 100 mm (Brother)' },
 };
-let currentSize = '2x1';
+let currentSize = '2.25x1.25';
 export function setLabelSize(size) { if (LABEL_SIZES[size]) currentSize = size; return currentSize; }
 
-/** 2 x 1 in label (see CSS above): QR left; price, brand, was/resells, id on the right. */
-function renderLabel2x1(item) {
+/** Small sticker (2.25 x 1.25 or 2 x 1 in; mirrors render_small in pi/sale_desk_printer.py): 16 mm QR left;
+ *  price, brand, was/resells, id on the right, each as big as the sticker allows ("maximize the text"). */
+function renderLabelSmall(item, wMm, hMm) {
   const price = priceText(item), id = String(item.id || '');
   const el = div('sd-label sd-2x1');
+  el.style.width = el.style.minWidth = wMm + MM; el.style.height = hMm + MM;
   el.dataset.id = id;
   const qr = div('sd-l-qr'); fillQr(qr, id);
   const txt = div('sd-f-txt');
-  const p = div('sd-l-price', price);
-  p.style.fontSize = Math.min(9.5, +(28 / (0.66 * price.length)).toFixed(1)) + MM; // fits the ~30 mm text column
-  txt.appendChild(p);
+  const tw = wMm - 1.2 - 16 - 1.5 - 1.2, avail = hMm - 2.4;              // text column width / height (mm)
   const brand = String(item.brand_display || item.brand || item.title || '').trim();
-  if (brand) txt.appendChild(div('sd-l-brand', brand));
-  const was = wasText(item), comps = compsText(item).replace(' online', '');
-  if (was) txt.appendChild(div('sd-l-small', was));
-  if (comps) txt.appendChild(div('sd-l-small', comps));
-  txt.appendChild(div('sd-l-id', id));
+  const small = [wasText(item), compsText(item).replace(' online', '')].filter(Boolean);
+  const nRows = 1 + (brand ? 1 : 0) + small.length;
+  // On screen the price box is 0.9 em tall (line-height .9) and bold digits run ~0.68 em wide; other rows 1.1 em.
+  const ps = Math.min(tw / (0.68 * price.length), (avail * (nRows > 3 ? 0.5 : 0.58)) / 0.9);
+  const left = avail - ps * 0.9 - 0.5 * nRows;
+  const longest = Math.max(id.length, ...small.map((t) => t.length));
+  const s = Math.max(1.8, Math.min(6, left / (nRows * 1.1), tw / (0.56 * longest)));
+  const p = div('sd-l-price', price); p.style.fontSize = ps.toFixed(2) + MM; txt.appendChild(p);
+  if (brand) { const b = div('sd-l-brand', brand); b.style.fontSize = s.toFixed(2) + MM; txt.appendChild(b); }
+  for (const t of small) { const r = div('sd-l-small', t); r.style.fontSize = s.toFixed(2) + MM; txt.appendChild(r); }
+  const idEl = div('sd-l-id', id); idEl.style.fontSize = s.toFixed(2) + MM; txt.appendChild(idEl);
   el.append(qr, txt);
   return el;
 }
@@ -226,7 +234,8 @@ function renderLabel3x2(item) {
 /** Label element in the chosen size (default: the last size printLabels used). Screen preview + print. */
 export function renderLabel(item, size = currentSize) {
   injectCss();
-  if (size === '2x1') return renderLabel2x1(item);
+  if (size === '2.25x1.25') return renderLabelSmall(item, 57.15, 31.75);
+  if (size === '2x1') return renderLabelSmall(item, 50.8, 25.4);
   if (size === '3x2') return renderLabel3x2(item);
   const price = priceText(item), was = wasText(item), id = String(item.id || '');
   const el = document.createElement('div');

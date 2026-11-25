@@ -885,7 +885,7 @@ const ACTIONS = {
     }
     if (p.rules) { db.settings.rules = Object.assign({}, db.settings.rules, p.rules); delete p.rules; }
     if (p.label_mode !== undefined && !['each', 'batch'].includes(p.label_mode)) fail('INVALID', 'label_mode must be each or batch');
-    if (p.label_size !== undefined && !['2x1', '3x2', '62x100'].includes(p.label_size)) fail('INVALID', 'label_size must be 2x1, 3x2 or 62x100');
+    if (p.label_size !== undefined && !['2.25x1.25', '2x1', '3x2', '62x100'].includes(p.label_size)) fail('INVALID', 'label_size must be 2.25x1.25, 2x1, 3x2 or 62x100');
     for (const k of ['venmo_handle', 'zelle_handle', 'apple_cash_handle', 'cash_app_handle', 'label_mode', 'label_size', 'users']) if (p[k] !== undefined) db.settings[k] = p[k];
     log(user, 'settings.save', '', { keys: Object.keys(partial || {}).filter((k) => k !== 'token') });
     return Object.assign({}, db.settings);
