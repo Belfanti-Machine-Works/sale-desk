@@ -306,7 +306,7 @@ function mount(container) {
         } else {
           const p = Number(it.final_price) || Number(it.ai_price) || 0;
           cart.lines[i] = { key: ph.key, type: 'item', id: it.id || code, qty: 1,
-            desc: [it.brand, it.title, it.size].filter(Boolean).join(' · ') || it.id || code, list_price: p, price: p };
+            desc: [Number(it.lot_qty) > 1 ? 'Lot of ' + Number(it.lot_qty) : '', it.brand, it.title, it.size].filter(Boolean).join(' · ') || it.id || code, list_price: p, price: p };
         }
       }
     } catch (err) {

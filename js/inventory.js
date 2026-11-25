@@ -25,7 +25,7 @@ function priceOf(it) {
   const f = it.final_price;
   return f !== '' && f != null ? Number(f) : Number(it.ai_price) || 0;
 }
-function descOf(it) { return [brandDisplay(it), it.title].filter(Boolean).join(' · ') || it.id; }
+function descOf(it) { return [Number(it.lot_qty) > 1 ? '📦 Lot of ' + Number(it.lot_qty) : '', brandDisplay(it), it.title].filter(Boolean).join(' · ') || it.id; }
 let tierCache = null; // [{tier, label, price}] from tiers.list, for "$3 bin" labels
 async function loadTiers() {
   if (tierCache) return;

@@ -467,7 +467,9 @@ const ACTIONS = {
   },
 
   // ---- items
-  async 'item.create'({ photos, hint }, user) {
+  async 'item.create'({ photos, hint, lot_qty }, user) {
+    const lot = lot_qty === undefined || lot_qty === null || lot_qty === '' ? 0 : Math.floor(Number(lot_qty));
+    if (lot && !(lot >= 2 && lot <= 999)) fail('INVALID', 'A lot is 2 to 999 pieces.');
     photos = photos || {};
     const roles = ['label', 'tag', 'item'].filter((r) => photos[r]);
     if (!roles.length) fail('INVALID', 'At least one photo is required');
@@ -482,6 +484,8 @@ const ACTIONS = {
     ai.confidence = photos.label ? 0.85 : 0.5;
     const r = applyRules(ai, null, db.settings.rules);
     if (hintStr.includes('label') && r.route === 'research') r.route = 'label'; // dev switch: see the label card
+    if (lot && r.route === 'bin') { r.route = 'label'; r.tier = ''; } // lots keep their own label
+    if (lot) { ai.title = 'Assorted pieces'; ai.size = ''; }
     const it = blankItem();
     const id = 'S-' + pad(++db.seq, 5);
     Object.assign(it, {
@@ -491,7 +495,7 @@ const ACTIONS = {
       ai_price: r.ai_price, route: r.route, tier: r.tier, premium: r.premium, notes: ai.notes || '',
       used_value_est: ai.used_value_est, notable_brand: !!ai.notable_brand,
       photo_ids: Object.fromEntries(roles.map((x) => [x, 'mock-' + x + '-' + id])),
-      thumb_url: await makeThumb(photos.item || photos.label || photos.tag), ai_cost_usd: 0.0004, _ai: ai,
+      thumb_url: await makeThumb(photos.item || photos.label || photos.tag), ai_cost_usd: 0.0004, _ai: ai, lot_qty: lot || '',
     });
     db.items.push(it);
     log(user, 'item.create', id, { route: r.route, ai_price: r.ai_price }, 0.0004);
@@ -580,6 +584,7 @@ const ACTIONS = {
       patch[k] = String(p[k] ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
     }
     if (patch.title !== undefined && !patch.title) fail('INVALID', 'Give the item a name.');
+    if (p.lot_qty !== undefined) { const n = p.lot_qty === '' || p.lot_qty === null ? 0 : Math.floor(Number(p.lot_qty)); if (n && !(n >= 2 && n <= 999)) fail('INVALID', 'A lot is 2 to 999 pieces.'); patch.lot_qty = n || ''; }
     if (p.condition !== undefined && p.condition !== null && p.condition !== '') {
       const c = String(p.condition).trim().toLowerCase().replace(/[\s-]+/g, '_');
       if (!['new', 'like_new', 'good', 'fair'].includes(c)) fail('INVALID', 'Condition must be new, like new, good or fair.');

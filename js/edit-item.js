@@ -21,6 +21,7 @@ const FIELDS = [
   { key: 'title', label: 'Item name', max: 80, placeholder: 'e.g. Air Max 90 Sneakers' },
   { key: 'size', label: 'Size', max: 30, placeholder: 'e.g. M, 8, 32x30' },
   { key: 'style_code', label: 'Style code', max: 40, placeholder: 'e.g. DD1391-100', hint: 'The style / model number on the tag. Helps find sold prices.' },
+  { key: 'lot_qty', label: 'Lot count', max: 3, placeholder: 'blank = single item', hint: 'For a bag / lot sold together: how many pieces.', numeric: true },
 ];
 const RECHECK_KEYS = ['brand', 'collab', 'style_code'];
 
@@ -41,7 +42,7 @@ export function openEditItem(item, opts = {}) {
     body.appendChild(h('h2', null, 'Edit details'));
     body.appendChild(h('p', { class: 'mute ed-sub' }, item.id));
     for (const f of FIELDS) {
-      const el = h('input', { type: 'text', value: orig(f.key), maxlength: f.max, placeholder: f.placeholder,
+      const el = h('input', { type: 'text', inputmode: f.numeric ? 'numeric' : null, value: orig(f.key), maxlength: f.max, placeholder: f.placeholder,
         autocomplete: 'off', autocorrect: 'off', spellcheck: 'false', autocapitalize: f.key === 'style_code' ? 'characters' : 'words' });
       el.addEventListener('input', syncRecheck);
       inputs[f.key] = el;
@@ -62,6 +63,9 @@ export function openEditItem(item, opts = {}) {
         if (v !== orig(f.key)) params[f.key] = v;
       }
       if (params.title === '') { toast('Give the item a name.', 'error'); inputs.title.focus(); return; }
+      if (params.lot_qty !== undefined && params.lot_qty !== '' && !(/^\d+$/.test(params.lot_qty) && +params.lot_qty >= 2 && +params.lot_qty <= 999)) {
+        toast('Lot count is 2 to 999 (or blank for a single item).', 'error'); inputs.lot_qty.focus(); return;
+      }
       const wantRecheck = recheck.checked;
       if (Object.keys(params).length === 1 && !wantRecheck) { sh.close(); return; }
       if (wantRecheck) params.recheck = true;

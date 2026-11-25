@@ -126,10 +126,12 @@ function compsText(item) {
 /** "Size M" (or the size as written when it already says size, e.g. "One size"); '' when unknown. */
 function sizeText(item) {
   const z = String(item.size ?? '').trim();
-  return !z ? '' : /size/i.test(z) ? z : 'Size ' + z;
+  const sz = !z ? '' : /size/i.test(z) ? z : 'Size ' + z;
+  const lot = Number(item.lot_qty) > 1 ? 'Lot of ' + Number(item.lot_qty) : ''; // lots (2026-11-24)
+  return [lot, sz].filter(Boolean).join(' · ');
 }
 function descText(item) {
-  return [item.brand_display || item.brand, item.title, item.size].map(s => String(s ?? '').trim()).filter(Boolean).join(' · ');
+  return [Number(item.lot_qty) > 1 ? 'Lot of ' + Number(item.lot_qty) : '', item.brand_display || item.brand, item.title, item.size].map(s => String(s ?? '').trim()).filter(Boolean).join(' · ');
 }
 function truthy(v) { return v === true || v === 'true' || v === 'TRUE' || v === 1 || v === '1'; }
 /** Price font size (mm) for the front: shrink for long prices so it stays on one line. */

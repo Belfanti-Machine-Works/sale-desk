@@ -313,6 +313,7 @@ function showResult(host, item, opts) {
       item.retail_confident && retail > 0 ? h('div', { class: 'pr-was' }, 'Was ' + money(retail) + ' new') : null,
       descEl(), editLink(),
       item.nwt ? h('div', { class: 'pill pill-labeled' }, 'New with tags') : null,
+      Number(item.lot_qty) > 1 ? h('div', { class: 'pill pill-labeled' }, '📦 Lot of ' + Number(item.lot_qty)) : null,
       hint()));
     if (opts.mode === 'review') root.appendChild(compsBlock(item, () => cd.stop()));
     else {
@@ -402,7 +403,7 @@ function hostOf(u) { try { return new URL(u).hostname.replace(/^www\./, ''); } c
 // ================================================================ Price tab
 function renderPrice(container) {
   container.classList.add('tab-price');
-  const flow = { step: 0, photos: {}, previews: {}, retake: null, busy: false, result: null };
+  const flow = { step: 0, photos: {}, previews: {}, retake: null, busy: false, result: null, lot: 0 };
   const fileInput = h('input', { type: 'file', accept: 'image/*', capture: 'environment', class: 'hidden', id: 'pr-file', 'aria-hidden': 'true', tabindex: '-1' });
   fileInput.addEventListener('change', async () => {
     const f = fileInput.files && fileInput.files[0];
@@ -415,7 +416,7 @@ function renderPrice(container) {
 
   function reset() {
     if (flow.result) flow.result.destroy();
-    Object.assign(flow, { step: 0, photos: {}, previews: {}, retake: null, busy: false, result: null });
+    Object.assign(flow, { step: 0, photos: {}, previews: {}, retake: null, busy: false, result: null, lot: 0 });
     drawShoot();
   }
   function role() { return ROLES[flow.step]; }
@@ -455,19 +456,35 @@ function renderPrice(container) {
       const pb = BigButton('🖨  Print ' + q.length + ' label' + (q.length === 1 ? '' : 's'), () => printQueued(pb), { variant: 'secondary' });
       view.appendChild(h('div', { class: 'pr-queue' }, pb));
     }
-    view.appendChild(h('div', { class: 'pr-steps', 'aria-label': 'Photo ' + (flow.step + 1) + ' of 3' },
-      ROLES.map((x, i) => h('span', { class: 'pr-dot' + (i < flow.step ? ' done' : i === flow.step ? ' on' : '') + (flow.photos[x] ? ' has' : '') },
-        { label: 'Label', tag: 'Tag', item: 'Item' }[x]))));
-    view.appendChild(h('h1', { class: 'pr-prompt' }, flow.retake ? 'Retake the brand / size label' : p.title));
-    view.appendChild(h('p', { class: 'mute pr-sub' }, flow.retake ? 'Get close and make sure the words are sharp.' : p.sub));
+    if (flow.lot) { // a lot: one photo of every piece together, priced as one bag (owner, 2026-11-24)
+      view.appendChild(h('div', { class: 'pr-lot-banner' }, '📦 Lot of ' + flow.lot + ' pieces · one price for the bag'));
+      view.appendChild(h('h1', { class: 'pr-prompt' }, 'Shoot the whole lot'));
+      view.appendChild(h('p', { class: 'mute pr-sub' }, 'Spread the ' + flow.lot + ' pieces out so every one shows, then take one photo.'));
+    } else {
+      view.appendChild(h('div', { class: 'pr-steps', 'aria-label': 'Photo ' + (flow.step + 1) + ' of 3' },
+        ROLES.map((x, i) => h('span', { class: 'pr-dot' + (i < flow.step ? ' done' : i === flow.step ? ' on' : '') + (flow.photos[x] ? ' has' : '') },
+          { label: 'Label', tag: 'Tag', item: 'Item' }[x]))));
+      view.appendChild(h('h1', { class: 'pr-prompt' }, flow.retake ? 'Retake the brand / size label' : p.title));
+      view.appendChild(h('p', { class: 'mute pr-sub' }, flow.retake ? 'Get close and make sure the words are sharp.' : p.sub));
+    }
     view.appendChild(h('label', { class: 'btn btn-primary btn-huge pr-shoot', for: 'pr-file', role: 'button' }, '📷  Take photo'));
     if (r === 'tag' && !flow.retake) view.appendChild(BigButton('Skip: no tag', () => { flow.step++; drawShoot(); }, { variant: 'secondary', class: 'btn-huge' }));
+    // Start a lot: several pieces in one bag, one photo, one price, one label.
+    if (r === 'label' && !count() && !flow.retake && !flow.lot) {
+      view.appendChild(BigButton('📦  Price a lot (bag of several)', async () => {
+        const n = await keypad({ title: 'How many pieces in the lot?', value: null });
+        if (n == null) return;
+        const k = Math.floor(Number(n));
+        if (!(k >= 2) || k > 999) { toast('A lot is 2 to 999 pieces.', 'error'); return; }
+        flow.lot = k; flow.step = ROLES.indexOf('item'); drawShoot();
+      }, { variant: 'secondary', class: 'btn-huge pr-lot-btn' }));
+    }
     // The whole-item photo matters most (thumbnail, promo, condition), so it is the only big button at that
     // step; skipping it is a small link. (Real use: 2 of 2 first items were priced without one.)
     const links = h('div', { class: 'pr-links-row' });
-    if (r === 'item' && count() >= 1) links.appendChild(h('button', { type: 'button', class: 'linkbtn', onClick: () => submit() }, 'No item photo? Price it anyway'));
+    if (r === 'item' && count() >= 1 && !flow.lot) links.appendChild(h('button', { type: 'button', class: 'linkbtn', onClick: () => submit() }, 'No item photo? Price it anyway'));
     if (r === 'label' && !flow.retake) links.appendChild(h('button', { type: 'button', class: 'linkbtn', onClick: () => { flow.step = 1; drawShoot(); } }, 'No label? Skip it'));
-    if (count() || flow.retake) links.appendChild(h('button', { type: 'button', class: 'linkbtn', onClick: reset }, 'Start over'));
+    if (count() || flow.retake || flow.lot) links.appendChild(h('button', { type: 'button', class: 'linkbtn', onClick: reset }, flow.lot ? 'Not a lot: start over' : 'Start over'));
     if (MOCK) links.appendChild(h('button', { type: 'button', class: 'linkbtn pr-sample', onClick: () => samplePhoto(r).then(takePhoto) }, 'Use sample photo'));
     view.appendChild(links);
     const shots = ROLES.filter((x) => flow.previews[x]);
@@ -487,7 +504,7 @@ function renderPrice(container) {
     let item;
     celebrate(); // fire-and-forget flourish (server decides if/what)
     try {
-      item = await call('item.create', { photos: Object.assign({}, flow.photos) });
+      item = await call('item.create', Object.assign({ photos: Object.assign({}, flow.photos) }, flow.lot ? { lot_qty: flow.lot } : {}));
     } catch (e) {
       flow.busy = false;
       showError(e);
@@ -668,6 +685,8 @@ const css = `
 .pr-edit { font-size: 16px; font-weight: 700; color: var(--accent); margin-top: 4px; }
 .pr-was { font-size: 22px; font-weight: 700; margin-top: 6px; }
 .pr-desc { font-size: 20px; margin: 10px 0 6px; overflow-wrap: anywhere; }
+.pr-lot-banner { background: #fff4d6; border: 2px solid #e0b84a; border-radius: 12px; padding: 10px 12px; font-weight: 800; font-size: 18px; margin: 4px 0 10px; }
+.pr-lot-btn { margin-top: 12px; }
 .pr-editlink { display: block; margin: 0 auto 6px; font-size: 16px; }
 .pr-flag { display: inline-block; background: var(--ink); color: #fff; font-weight: 800; padding: 3px 12px; border-radius: 12px; margin-bottom: 6px; }
 .pr-cdrow { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 10px; }
