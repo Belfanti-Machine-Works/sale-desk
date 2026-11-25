@@ -494,11 +494,11 @@ function renderSettings(container) {
     };
     paint();
     // Label size: 3 x 2 in (Rollo thermal via the Pi print server) or 62 x 100 mm (Brother QL).
-    let size = ['2x1', '3x2', '62x100'].includes(s.label_size) ? s.label_size : '2.25x1.25';
+    let size = ['2.25x1.25', '3x2', '62x100'].includes(s.label_size) ? s.label_size : '2x1';
     const sizeSeg = h('div', { class: 'seg', role: 'radiogroup', style: { marginTop: '14px' } });
     const paintSize = () => {
       sizeSeg.innerHTML = '';
-      for (const [v, label] of [['2.25x1.25', '2¼ × 1¼ in'], ['2x1', '2 × 1 in'], ['3x2', '3 × 2 in'], ['62x100', '62 × 100 mm']]) {
+      for (const [v, label] of [['2x1', '2 × 1 in'], ['2.25x1.25', '2¼ × 1¼ in'], ['3x2', '3 × 2 in'], ['62x100', '62 × 100 mm']]) {
         sizeSeg.appendChild(h('button', { type: 'button', class: size === v ? 'on' : '', role: 'radio', 'aria-checked': String(size === v), onClick: async () => {
           if (size === v) return;
           const prev = size; size = v; paintSize();

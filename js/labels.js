@@ -167,7 +167,7 @@ export const LABEL_SIZES = {
   '3x2': { page: '@page{size:3in 2in;margin:0}', cls: 'sd-page-3x2', name: '3 × 2 in (Rollo)' },
   '62x100': { page: '@page{size:62mm 100mm;margin:0}', cls: '', name: '62 × 100 mm (Brother)' },
 };
-let currentSize = '2.25x1.25';
+let currentSize = '2x1';
 export function setLabelSize(size) { if (LABEL_SIZES[size]) currentSize = size; return currentSize; }
 
 /** Small sticker (2.25 x 1.25 or 2 x 1 in; mirrors render_small in pi/sale_desk_printer.py): 16 mm QR left;
