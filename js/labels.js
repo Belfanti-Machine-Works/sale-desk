@@ -123,6 +123,11 @@ function compsText(item) {
   if (b <= labelPrice(item)) return ''; // only useful as an anchor when it's above our price
   return 'Resells ' + (a === b ? money(a) : money(a) + '–' + money(b)) + ' online';
 }
+/** "Size M" (or the size as written when it already says size, e.g. "One size"); '' when unknown. */
+function sizeText(item) {
+  const z = String(item.size ?? '').trim();
+  return !z ? '' : /size/i.test(z) ? z : 'Size ' + z;
+}
 function descText(item) {
   return [item.brand_display || item.brand, item.title, item.size].map(s => String(s ?? '').trim()).filter(Boolean).join(' · ');
 }
@@ -181,14 +186,16 @@ function renderLabelSmall(item, wMm, hMm) {
   const txt = div('sd-f-txt');
   const tw = wMm - 1.2 - 16 - 1.5 - 1.2, avail = hMm - 2.4;              // text column width / height (mm)
   const brand = String(item.brand_display || item.brand || item.title || '').trim();
+  const size = sizeText(item); // owner, 2026-11-24: the size MUST be on the label (a third bigger than the other rows)
   const small = [wasText(item), compsText(item).replace(' online', '')].filter(Boolean);
-  const nRows = 1 + (brand ? 1 : 0) + small.length;
+  const nRows = 1 + (brand ? 1 : 0) + (size ? 1.35 : 0) + small.length;
   // On screen the price box is 0.9 em tall (line-height .9) and bold digits run ~0.68 em wide; other rows 1.1 em.
-  const ps = Math.min(tw / (0.68 * price.length), (avail * (nRows > 3 ? 0.5 : 0.58)) / 0.9);
+  const ps = Math.min(tw / (0.68 * price.length), (avail * (nRows > 4 ? 0.44 : nRows > 3 ? 0.5 : 0.58)) / 0.9);
   const left = avail - ps * 0.9 - 0.5 * nRows;
   const longest = Math.max(id.length, ...small.map((t) => t.length));
   const s = Math.max(1.8, Math.min(6, left / (nRows * 1.1), tw / (0.56 * longest)));
   const p = div('sd-l-price', price); p.style.fontSize = ps.toFixed(2) + MM; txt.appendChild(p);
+  if (size) { const z = div('sd-l-brand', size); z.style.fontSize = Math.min(s * 1.35, tw / (0.62 * size.length)).toFixed(2) + MM; txt.appendChild(z); }
   if (brand) { const b = div('sd-l-brand', brand); b.style.fontSize = s.toFixed(2) + MM; txt.appendChild(b); }
   for (const t of small) { const r = div('sd-l-small', t); r.style.fontSize = s.toFixed(2) + MM; txt.appendChild(r); }
   const idEl = div('sd-l-id', id); idEl.style.fontSize = s.toFixed(2) + MM; txt.appendChild(idEl);

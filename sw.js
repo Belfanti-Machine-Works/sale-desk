@@ -3,7 +3,7 @@
 // App files (same origin) are network-first so an update lands on the very next open (2026-11-24: phones kept
 // running the old copy); the cache is the offline fallback. CDN libraries (pinned versions) are
 // stale-while-revalidate. publish.ps1 bumps VERSION on each publish to drop old caches.
-const VERSION = 'sale-desk-20261124-183842';
+const VERSION = 'sale-desk-20261124-184659';
 const SHELL = [
   './', 'index.html', 'app.css', 'manifest.json', 'icon.svg',
   'js/main.js', 'js/api.js', 'js/state.js', 'js/ui.js', 'js/price.js', 'js/inventory.js', 'js/edit-item.js', 'js/celebrate.js',
